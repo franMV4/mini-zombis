@@ -611,19 +611,21 @@ function oven(r) {
   return prop(r, g);
 }
 const chain = (x, z, len = 2.2) => { const g = put(new THREE.Group(), x, 0, z); for (let i = 0; i < len / .22; i++) put(part(.07, .16, .03, 0x55575c), 0, 3.2 - i * .22, 0, g).rotation.y = i % 2 * 1.57; put(part(.12, .2, .05, 0x55575c), 0, 3.2 - len - .1, 0, g); };
-const mistTex = (() => {
+const fogTexture = rgb => {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, 'rgba(190,205,230,.55)'); gr.addColorStop(1, 'rgba(190,205,230,0)');
+  gr.addColorStop(0, `rgba(${rgb},.55)`); gr.addColorStop(1, `rgba(${rgb},0)`);
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);
-})();
-function mist(rects, n) {
+};
+const mistTex = fogTexture('190,205,230'), dayMistTex = fogTexture('226,230,220');
+// o: tex, op [mín, máx] opacidad, sc [ancho mín, máx], y [altura mín, máx]
+function mist(rects, n, o = {}) {
   for (let i = 0; i < n; i++) {
-    const r = rects[Math.random() * rects.length | 0];
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: mistTex, transparent: true, opacity: rand(.18, .35), depthWrite: false, fog: false }));
-    s.scale.set(rand(5, 9), rand(2.5, 4), 1); put(s, rand(r[0], r[2]), .5, rand(r[1], r[3]));
-    MAP.mists.push({ s, vx: rand(-.3, .3), r });
+    const r = rects[Math.random() * rects.length | 0], w = rand(...(o.sc ?? [5, 9]));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: o.tex ?? mistTex, transparent: true, opacity: rand(...(o.op ?? [.18, .35])), depthWrite: false, fog: false }));
+    s.scale.set(w, w * rand(.4, .55), 1); put(s, rand(r[0], r[2]), rand(...(o.y ?? [.5, .5])), rand(r[1], r[3]));
+    MAP.mists.push({ s, v: rand(-.5, .5), ax: r[2] - r[0] >= r[3] - r[1] ? 'x' : 'z', r });
   }
 }
 
@@ -998,7 +1000,8 @@ function decorRuta() {
   prop([59, 65, 61, 70], grp([part(1.8, 1.2, 4.8, 0x7a5634), 0, .6, 0], [part(1.8, 1, .05, 0x9fc6d8), .4, 1.7, 0]));
   { const v = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, .3, 20), smat(0x8a8d94)); v.rotation.z = Math.PI / 2; put(v, 71.8, 1.7, 67); }
   // carreteras: niebla, señales y torres de la luz entre los árboles
-  mist([[-60, -46, -52, 12]], 10); mist([[-40, -62, 40, -54]], 14); mist([[52, -44, 60, -6]], 7); mist([[52, 22, 60, 40]], 4); mist([[-60, 44, 30, 52]], 16);
+  const roadFog = { tex: dayMistTex, op: [.35, .6], sc: [6, 11], y: [.4, 1.8] };
+  mist([[-60, -46, -52, 12]], 40, roadFog); mist([[-40, -62, 40, -54]], 55, roadFog); mist([[52, -44, 60, -6]], 26, roadFog); mist([[52, 22, 60, 40]], 13, roadFog); mist([[-60, 36, -52, 44], [-60, 44, 30, 52]], 60, roadFog);
   roadSign(-51.4, -20); roadSign(-30, -53.4); roadSign(20, -53.4, 0x2f5f9a); roadSign(60.6, -25); roadSign(0, 52.6); roadSign(-30, 52.6, 0x2f5f9a);
   for (let x = -36; x < 36; x += 12) put(grp([part(.3, 6, .3, 0x5a4a3a), 0, 3, 0], [part(2, .15, .15, 0x5a4a3a), 0, 5.6, 0]), x, 0, -62.5);
   for (let x = -52; x < 28; x += 12) put(grp([part(.3, 6, .3, 0x5a4a3a), 0, 3, 0], [part(2, .15, .15, 0x5a4a3a), 0, 5.6, 0]), x, 0, 43.5);
@@ -1195,7 +1198,19 @@ const rain = (() => {
   return l;
 })();
 let boltT = 9, boltFx = 0, nightAmbT = 6;
+const FOG_IN = { near: 9, far: 30, col: new THREE.Color(0xc4c9be) }, envCol = new THREE.Color();
+let fogK = 0;
 function updateEnv(dt) {
+  for (const m of MAP.mists) {
+    const p = m.s.position, lo = m.ax === 'x' ? m.r[0] : m.r[1], hi = m.ax === 'x' ? m.r[2] : m.r[3];
+    p[m.ax] += m.v * dt; if (p[m.ax] < lo - 2 || p[m.ax] > hi + 2) m.v *= -1;
+  }
+  if (camFocus && !NIGHT) {
+    fogK = THREE.MathUtils.damp(fogK, state === 'play' && zoneAt(camFocus.x, camFocus.z)?.fog ? 1 : 0, 1.5, dt);
+    const e = MAP.env; envCol.setHex(e.sky).lerp(FOG_IN.col, fogK);
+    scene.fog.near = THREE.MathUtils.lerp(e.fog[0], FOG_IN.near, fogK); scene.fog.far = THREE.MathUtils.lerp(e.fog[1], FOG_IN.far, fogK);
+    scene.fog.color.copy(envCol); scene.background.copy(envCol);
+  }
   if (!NIGHT) { torch.intensity = torchFill.intensity = 0; return; }
   // linterna
   const p = me.pos, on = !me.dead;
@@ -1207,7 +1222,6 @@ function updateEnv(dt) {
     if (Math.random() < f.p * dt) f.off = rand(.05, .35);
     f.light.intensity = f.base * rand(.85, 1.1);
   }
-  for (const m of MAP.mists) { m.s.position.x += m.vx * dt; if (m.s.position.x < m.r[0] - 3 || m.s.position.x > m.r[2] + 3) m.vx *= -1; }
   // lluvia alrededor de la cámara
   rain.position.set(camFocus.x, 0, camFocus.z);
   const a = rain.geometry.attributes.position, arr = a.array;
