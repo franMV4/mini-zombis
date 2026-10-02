@@ -260,6 +260,7 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const rand = (a, b) => a + Math.random() * (b - a);
 const lerpA = (a, b, k) => a + ((((b - a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI) * k;
 const TOUCH = matchMedia('(pointer:coarse)').matches;
+const FOG_GRACE = 2, FOG_DMG = 9; // niebla de La Ruta: segundos de gracia y daño por mordisco
 const BREAK = 12, BOX_PRICE = 950, PAP_PRICE = 3000, MAX_PLAYERS = 4, R_PLAYER = .45;
 const SPAWN_OFF = [[0, 0], [1.6, 0], [-1.6, 0], [0, 1.6]];
 // los carteles se pintan en canvas: esperar a la fuente (máx. 1,5 s)
@@ -694,20 +695,20 @@ const MAPS = {
     zones: {
       A: { name: 'Estación', ext: 1, floor: 'asphalt', rects: [[-72, 12, -40, 36]] },
       B: { name: 'Sala de espera', floor: 'tiles', wall: 0x8a7a6a, rects: [[-74, -6, -62, 11]] },
-      C: { name: 'Carretera del bosque', ext: 1, startOpen: 1, floor: 'road', rects: [[-60, -46, -52, 12]] },
+      C: { name: 'Carretera del bosque', ext: 1, startOpen: 1, fog: 1, floor: 'road', rects: [[-60, -46, -52, 12]] },
       D: { name: 'Restaurante', ext: 1, startOpen: 1, floor: 'asphalt', rects: [[-72, -70, -40, -46]] },
       E: { name: 'Comedor', floor: 'diner', wall: 0xb8463a, rects: [[-70, -77, -46, -71]] },
-      F: { name: 'Carretera norte', ext: 1, startOpen: 1, floor: 'road', rects: [[-40, -62, 40, -54]] },
+      F: { name: 'Carretera norte', ext: 1, startOpen: 1, fog: 1, floor: 'road', rects: [[-40, -62, 40, -54]] },
       G: { name: 'Granja', ext: 1, startOpen: 1, floor: 'dirt', rects: [[40, -74, 64, -44]] },
       H: { name: 'Granero', floor: 'wood', wall: 0x8a3a2a, rects: [[65, -72, 77, -48]] },
-      I: { name: 'Camino de la central', ext: 1, startOpen: 1, floor: 'road', rects: [[52, -44, 60, -6]] },
+      I: { name: 'Camino de la central', ext: 1, startOpen: 1, fog: 1, floor: 'road', rects: [[52, -44, 60, -6]] },
       J: { name: 'Central eléctrica', ext: 1, startOpen: 1, floor: 'concrete', rects: [[40, -6, 64, 22]] },
       K: { name: 'Sala de turbinas', floor: 'metal', wall: 0x5a6470, rects: [[65, -4, 77, 20]] },
-      L: { name: 'Camino del pueblo', ext: 1, startOpen: 1, floor: 'road', rects: [[52, 22, 60, 40]] },
+      L: { name: 'Camino del pueblo', ext: 1, startOpen: 1, fog: 1, floor: 'road', rects: [[52, 22, 60, 40]] },
       M: { name: 'Pueblo', ext: 1, startOpen: 1, floor: 'asphalt', rects: [[30, 40, 74, 62]] },
       N: { name: 'Bar', floor: 'wood', wall: 0x6a4a3a, rects: [[36, 63, 56, 71]] },
       O: { name: 'Banco', floor: 'carpet', wall: 0x7a7a6a, rects: [[58, 63, 72, 71]] },
-      P: { name: 'Carretera sur', ext: 1, startOpen: 1, floor: 'road', rects: [[-60, 36, -52, 44], [-60, 44, 30, 52]] },
+      P: { name: 'Carretera sur', ext: 1, startOpen: 1, fog: 1, floor: 'road', rects: [[-60, 36, -52, 44], [-60, 44, 30, 52]] },
     },
     doors: [
       { a: 'A', b: 'B', r: [-70, 11, -66, 12], price: 750, kind: 'wood' },
@@ -2271,6 +2272,10 @@ const sfx = {
   charge: () => { tone(120, 900, .8, .1, 'sawtooth', 0, .3); noise(.8, .15, { type: 'bandpass', f: 400, f1: 2400, q: 2, attack: .3 }); },
   acid: () => { noise(.5, .35, { type: 'bandpass', f: 1800, f1: 300, q: 1.5 }); for (let i = 0; i < 5; i++) tone(rand(300, 700), rand(150, 300), .08, .07, 'sine', .05 + i * .07); },
   chop: () => { noise(.22, .35, { type: 'bandpass', f: 600, f1: 3000, q: 1.2 }); noise(.2, .45, { f: 500, f1: 80, delay: .1 }); tone(90, 40, .25, .35, 'sine', .1); },
+  fogBite: () => {
+    if (zbuf) zClip('scream', { type: 'runner', voice: rand(1.35, 1.6), pos: me.pos }, .45); else tone(900, 300, .15, .05, 'sawtooth');
+    noise(.12, .3, { type: 'bandpass', f: 2600, f1: 900, q: 1.5 }); denizen();
+  },
   horn: () => { for (const f of [311, 392]) tone(f, f * .985, .6, .06, 'sawtooth', 0, .02); },
   heart: () => { tone(62, 40, .12, .4, 'sine'); tone(58, 38, .12, .3, 'sine', .16); },
   thunder: (delay = 0) => { noise(2.6, .55, { f: 380, f1: 40, delay, attack: .04 }); noise(1.2, .3, { f: 1400, f1: 120, delay }); tone(48, 30, 2, .3, 'sine', delay, .05); },
@@ -2519,6 +2524,7 @@ function updateLocal(dt) {
     pushOut(me.pos, R_PLAYER);
     if (busPush(me.pos, R_PLAYER)) pushOut(me.pos, R_PLAYER);
   }
+  if (!me.onBus && zoneAt(me.pos.x, me.pos.z)?.fog && !me.fogWarned) { me.fogWarned = true; banner('¡LA NIEBLA MUERDE!', 'Ve en el autobús o corre hasta la siguiente parada'); }
   if (me.down) {
     streamOn(null); me.firing = false; me.crawlM = Math.min(1, ml);
     if (ml > .1) me.model.g.rotation.y = Math.atan2(mx, mz);
@@ -2576,6 +2582,9 @@ function simEnts(dt) {
   for (const E of ents.values()) {
     if (E.dm > 0 && (E.dm -= dt) <= 0) { E.dm = 0; syncGun(E); }
     if (E.dead || E.down) continue;
+    if (state === 'play' && !E.onBus && zoneAt(E.pos.x, E.pos.z)?.fog) {
+      if ((E.fogT = (E.fogT ?? 0) + dt) > FOG_GRACE && (E.fogBiteT = (E.fogBiteT ?? 0) - dt) <= 0) { E.fogBiteT = rand(.9, 1.4); hurt(E, FOG_DMG); tellSnd(E, 'fogBite'); }
+    } else E.fogT = E.fogBiteT = 0;
     if (T - E.hitAt > 4) E.hp = Math.min(E.maxHp, E.hp + E.regen * dt);
     E.cool -= dt;
     const w = wOf(E);
@@ -2767,6 +2776,22 @@ function zBoom(k, x, z) {
   if (f.dmg) for (const P of alive()) if (inR(P, x, z, f.boom * .8)) hurt(P, f.dmg);
   zFx(k, x, z); broadcast({ t: 'zfx', k, x: +x.toFixed(2), z: +z.toFixed(2) });
 }
+// bichos de la niebla: solo efecto visual (el daño lo pone el anfitrión)
+const denizens = [];
+function denizen() {
+  const g = grp([part(.45, .3, .55, 0x15141a), 0, .3, 0], [part(.3, .25, .3, 0x15141a), 0, .45, .3], [part(.07, .06, .03, bmat(0xffe14d)), -.08, .5, .46], [part(.07, .06, .03, bmat(0xffe14d)), .08, .5, .46]);
+  for (const [x, z] of [[-.25, -.2], [.25, -.2], [-.25, .2], [.25, .2]]) put(part(.06, .3, .06, 0x15141a), x, .12, z, g).rotation.z = x * 2;
+  const a = rand(0, 6.28); put(g, me.pos.x + Math.sin(a) * 2.2, 0, me.pos.z + Math.cos(a) * 2.2, scene);
+  denizens.push({ g, a, t: 0 });
+}
+function updateDenizens(dt) {
+  for (let i = denizens.length - 1; i >= 0; i--) {
+    const d = denizens[i], k = (d.t += dt) / .45, r = 2.2 * Math.max(0, 1 - k * 1.3);
+    d.g.position.set(me.pos.x + Math.sin(d.a) * r, Math.sin(Math.min(k, 1) * Math.PI) * 1.1, me.pos.z + Math.cos(d.a) * r);
+    d.g.rotation.y = d.a + Math.PI; d.g.scale.setScalar(Math.max(.01, 1 - Math.max(0, k - .8) * 4));
+    if (k >= 1) { scene.remove(d.g); denizens.splice(i, 1); }
+  }
+}
 function updateZshots(dt) {
   const host = isHost();
   for (let i = zshots.length - 1; i >= 0; i--) {
@@ -2855,7 +2880,7 @@ function enterPlay() {
 }
 // anfitrión (o solo): empieza la partida para todos
 function startGame() {
-  initAudio();
+  initAudio(); me.fogWarned = false;
   if (TOUCH && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
   resetWorld();
   const list = [...ents.values()], pos = {};
@@ -3302,7 +3327,7 @@ function frame(now) {
     updateDrops(dt);
   }
   updateOthers(dt);
-  updateBullets(dt); updateZshots(dt); updateFx(dt); updateBox(dt); updateDoors(dt); updatePap(dt);
+  updateBullets(dt); updateZshots(dt); updateDenizens(dt); updateFx(dt); updateBox(dt); updateDoors(dt); updatePap(dt);
   if (state === 'play' || state === 'over') { updatePrompt(); hud(); }
   netTick(dt);
   flash.intensity = Math.max(0, flash.intensity - dt * 700);
