@@ -1068,16 +1068,19 @@ function busPush(p, r) {
   else { const n = Math.sign(lz) || 1; p.x += n * oz * s; p.z += n * oz * c; }
   return true;
 }
-function boardBus(E) { E.onBus = true; E.bl = { x: -.6, z: 1.6 }; busWorld(E); }
+function boardBus(E) {
+  const s = Math.sin(BUS.h), c = Math.cos(BUS.h), dx = E.pos.x - BUS.x, dz = E.pos.z - BUS.z;
+  E.onBus = true; E.bl = { x: clamp(dx * c - dz * s, -1.05, 1.05), z: clamp(dx * s + dz * c, -3.9, 2) }; busWorld(E);
+}
 function leaveBus(E) {
   E.onBus = false;
   for (const [x, z] of [[-2.6, 2.5], [2.6, 0], [0, -6], [0, 6.2]]) { E.bl = { x, z }; busWorld(E); if (!blocked(E.pos.x, E.pos.z, R_PLAYER)) break; }
   pushOut(E.pos, R_PLAYER);
 }
 // subir y bajar es cosa de cada jugador (local: no pasa por el anfitrión)
-const busUse = { local: true, x: 0, z: 0, r: 2.6,
+const busUse = { local: true, x: 0, z: 0, r: 1.7,
   info: E => !BUS ? null : E.onBus ? { text: 'Bajar del autobús', price: 0, ok: true }
-    : { text: BUS.wait > 0 ? `Subir al autobús · sale en ${Math.ceil(BUS.wait)} s` : 'Subir al autobús', price: 0, ok: true },
+    : { text: BUS.wait > 0 ? `Subir al autobús · sale en ${Math.ceil(BUS.wait)} s` : BUS.spd > 1 ? '¡Subir al autobús en marcha!' : 'Subir al autobús', price: 0, ok: true },
   act: E => E.onBus ? leaveBus(E) : boardBus(E) };
 function updateBus(dt) {
   const B = BUS; if (!B) return;
@@ -1103,7 +1106,11 @@ function updateBus(dt) {
   B.prevWait = B.wait;
   if (me.onBus) busWorld(me);
   if (me.onBus) { busUse.x = me.pos.x; busUse.z = me.pos.z; }
-  else { const s = Math.sin(B.h), c = Math.cos(B.h); busUse.x = B.x - 2.2 * c + 2.5 * s; busUse.z = B.z + 2.2 * s + 2.5 * c; }
+  else {
+    const s = Math.sin(B.h), c = Math.cos(B.h), dx = me.pos.x - B.x, dz = me.pos.z - B.z;
+    const lx = clamp(dx * c - dz * s, -BUS_HX, BUS_HX), lz = clamp(dx * s + dz * c, -BUS_HZ, BUS_HZ);
+    busUse.x = B.x + lx * c + lz * s; busUse.z = B.z - lx * s + lz * c;
+  }
   if (ac) setLoop('bus', playing ? clamp(1 - d / 40, 0, 1) * (.06 + .3 * Math.min(1, B.spd / BUS_SPEED)) : 0);
 }
 
