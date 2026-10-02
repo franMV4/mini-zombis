@@ -1,0 +1,16 @@
+{
+  "name": "La noche de los Mini Zombis",
+  "short_name": "Mini Zombis",
+  "description": "Sobrevive a oleadas de zombis, solo o con amigos.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#151219",
+  "theme_color": "#151219",
+  "lang": "es",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
