@@ -1826,7 +1826,7 @@ function boomFx(x, z, w) {
   flash.position.set(x, 1.5, z); flash.color.setHex(col); flash.intensity = 140;
   if (Math.hypot(x - me.pos.x, z - me.pos.z) < 18) shake = Math.max(shake, w.boom > 2 ? .4 : .15);
   if (!w.cherry) splat(x, z, w.boom * .45, scorchMat);
-  if (w.zap) sfx.zapBoom(); else if (w.snd) sfx[w.snd](); else sfx.boom(w.boom);
+  if (w.zap) sfx.zapBoom(); else if (w.boomSnd) sfx[w.boomSnd](); else sfx.boom(w.boom);
 }
 function explode(x, z, w, owner) {
   for (const zz of zombies) {
@@ -2383,12 +2383,12 @@ const BOSS_AI = {
 };
 // orbes del Reactor y charcos tóxicos: el anfitrión decide el daño; los demás solo los ven
 const zshots = [], puddles = [], orbMat = bmat(0x9fff7a), toxicMat = decal(0x7dff6a);
-// fxCol/boom: como boomFx · dmg a jugadores en boom*.8 · puddle: radio del charco · snd: sonido propio
+// fxCol/boom: como boomFx · dmg a jugadores en boom*.8 · puddle: radio del charco · boomSnd: sonido propio (no snd: ese lo usan las armas para el disparo)
 const ZFX = {
-  acid: { boom: 2.2, fxCol: 0x7dff6a, dmg: 28, puddle: 1.8, snd: 'acid' },
+  acid: { boom: 2.2, fxCol: 0x7dff6a, dmg: 28, puddle: 1.8, boomSnd: 'acid' },
   slam: { boom: 3.2, fxCol: 0xd8b48a, dmg: 22 },
-  chop: { boom: 1.5, fxCol: 0xff5a4a, snd: 'chop' },
-  burst: { boom: 4.5, fxCol: 0xc8ff4a, dmg: 35, puddle: 3.2, snd: 'acid' },
+  chop: { boom: 1.5, fxCol: 0xff5a4a, boomSnd: 'chop' },
+  burst: { boom: 4.5, fxCol: 0xc8ff4a, dmg: 35, puddle: 3.2, boomSnd: 'acid' },
 };
 function addOrb(x, z, vx, vz) { zshots.push({ m: put(new THREE.Mesh(orbGeo, orbMat), x, 1.3, z, scene), vx, vz, life: 3 }); sfx.zapBoom(); }
 function shootOrb(x, z, vx, vz) {
