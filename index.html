@@ -39,6 +39,8 @@ canvas{position:fixed;inset:0;display:block;cursor:crosshair}
 .cash small{font:600 10px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;opacity:.75}
 #bossBar{align-self:center;width:min(420px,80vw);display:flex;gap:8px;align-items:center;font:400 14px var(--display);color:var(--paper);text-shadow:2px 2px 0 var(--ink)}
 #bossBar .bar{flex:1;height:16px}
+.touch #bossBar{position:fixed;left:0;right:0;margin-inline:auto;top:calc(env(safe-area-inset-top,0px) + 80px);width:min(320px,42vw);font-size:11px;gap:6px;padding:4px 8px;border-radius:8px;background:rgba(29,26,23,.72);box-sizing:border-box}
+.touch #bossBar .bar{height:10px}
 #bossBar .bar i{background:linear-gradient(90deg,#7a1fa2,var(--blood))}
 #slots{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .slot{pointer-events:auto;font:600 12px/1.1 var(--body);padding:6px 12px;min-width:110px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:3px;transition:transform .12s}
@@ -119,6 +121,8 @@ canvas{position:fixed;inset:0;display:block;cursor:crosshair}
 .btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;align-items:center}
 .netrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center;width:100%}
 .netrow input{font:400 20px var(--display);letter-spacing:.18em;text-transform:uppercase;width:7em;padding:10px 12px;border:3px solid var(--ink);border-radius:12px;background:#fff;color:var(--ink);box-shadow:4px 4px 0 var(--ink);text-align:center;box-sizing:border-box}
+.netrow #nameIn{width:10em;letter-spacing:.04em;text-transform:none;font-size:18px}
+.netrow label{font:400 14px var(--display)}
 .netrow input::placeholder{color:#a89f8f;letter-spacing:.08em}
 .netrow input:focus-visible{outline:3px solid var(--toxic);outline-offset:2px}
 .btn.small{font-size:16px;padding:10px 16px}
@@ -142,7 +146,7 @@ canvas{position:fixed;inset:0;display:block;cursor:crosshair}
 .touch #banner{top:calc(env(safe-area-inset-top,0px) + 18%);font-size:clamp(18px,6vw,28px);text-shadow:2px 2px 0 var(--ink)}
 .touch #banner small{font-size:13px;margin-top:4px}
 @media (max-height:520px){
-  #banner,.touch #banner{top:calc(env(safe-area-inset-top,0px) + 84px);left:0;right:0;margin-inline:auto;width:fit-content;max-width:min(62vw,460px);font-size:clamp(16px,5.5vh,24px);text-shadow:2px 2px 0 var(--ink)}
+  #banner,.touch #banner{top:calc(env(safe-area-inset-top,0px) + 104px);left:0;right:0;margin-inline:auto;width:fit-content;max-width:min(62vw,460px);font-size:clamp(16px,5.5vh,24px);text-shadow:2px 2px 0 var(--ink)}
   #banner small,.touch #banner small{font-size:12px;margin-top:3px}
   #downBox{top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);font-size:13px;padding:6px 12px}
   .screen{padding:12px 16px}
@@ -190,6 +194,10 @@ canvas{position:fixed;inset:0;display:block;cursor:crosshair}
   <div class="stack">
     <h1 class="logo"><span>la noche de los</span>Mini Zombis</h1>
     <button class="btn" id="playBtn">JUGAR SOLO</button>
+    <div class="netrow">
+      <label for="nameIn">Tu nombre</label>
+      <input id="nameIn" maxlength="14" placeholder="Jugador" autocomplete="nickname" spellcheck="false">
+    </div>
     <div class="netrow">
       <button class="btn small ghost" id="hostBtn">CREAR SALA</button>
       <input id="codeIn" maxlength="5" placeholder="CÓDIGO" aria-label="Código de la sala" autocomplete="off" spellcheck="false">
@@ -1351,7 +1359,11 @@ const MAX_PERKS = 4, QR_SOLO_USES = 3;
 // Cada jugador es una entidad. 'me' es el tuyo. En solo solo existe 'me'; online, el anfitrión simula a todos.
 const ents = new Map();
 let me = null;
+const cleanName = n => String(n ?? '').replace(/[<>&"'`]/g, '').trim().slice(0, 14);
+// tu nombre online: el que escribas, o el del personaje si lo dejas vacío
+const myName = () => cleanName(save.name) || charOf(save.sel).name;
 function makeEnt(id, name, charId) {
+  name = cleanName(name) || 'Jugador';
   const E = { id, name, charId, model: null, pos: null, held: null, heldId: null, tag: null, tx: START[0], tz: START[1], ry: 0,
     speed: 7, money: 500, kills: 0, cool: 0, walk: 0, cashFrac: 0, hitAt: -9, ouchAt: -9, beatT: 0, emptyAt: -9, firing: false, aim: new THREE.Vector3(0, 0, -1),
     rc: 0, rcSeen: 0, qrUses: 0 };
@@ -2906,7 +2918,7 @@ function renderChars() {
     b.innerHTML = avatar(c) + `<span><b>${c.name}</b><small>${c.desc}</small>${owned ? (sel ? '<em>Elegido</em>' : '') : `<em>${c.price} calaveras</em>`}</span>`;
     b.onclick = () => {
       if (!owned) { if (save.skulls < c.price) return; save.skulls -= c.price; save.owned.push(c.id); initAudio(); sfx.buy(); }
-      save.sel = c.id; persist(); me.charId = c.id; me.name = c.name; setModel(me); resetStats(me); syncGun(me); renderChars();
+      save.sel = c.id; persist(); me.charId = c.id; me.name = myName(); setModel(me); resetStats(me); syncGun(me); renderChars();
     };
     return b;
   }));
@@ -3009,7 +3021,7 @@ function showLobby(host) {
 function renderLobby(list) {
   $('plist').replaceChildren(...list.map(([name, ch], i) => {
     const li = document.createElement('li');
-    li.innerHTML = avatar(charOf(ch)) + `<span>${name}${i === 0 ? ' <small class="muted">(anfitrión)</small>' : ''}</span>`;
+    li.innerHTML = avatar(charOf(ch)) + `<span>${cleanName(name) || 'Jugador'}${i === 0 ? ' <small class="muted">(anfitrión)</small>' : ''}</span>`;
     return li;
   }));
 }
@@ -3308,7 +3320,9 @@ function updateDoors(dt) {
 
 shootMaps();
 setMap(MAPS[save.map] ? save.map : 'pueblo');
-me = makeEnt(0, charOf(save.sel).name, save.sel);
+me = makeEnt(0, myName(), save.sel);
+$('nameIn').value = save.name ?? '';
+$('nameIn').addEventListener('input', e => { save.name = cleanName(e.target.value); persist(); me.name = myName(); });
 ents.set(0, me);
 showMenu();
 $(TOUCH ? 'keysDesk' : 'keysTouch').hidden = true;
