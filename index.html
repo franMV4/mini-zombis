@@ -1967,8 +1967,8 @@ const sfx = {
   clear: () => { [523, 659, 784, 1046].forEach((n, i) => tone(n, n, .25, .08, 'triangle', i * .12)); },
   flesh: () => { noise(.08, .2, { f: 900, f1: 200 }); noise(.05, .1, { type: 'bandpass', f: 2200, q: 2, delay: .02 }); },
   // tú: quejido de dolor al recibir un golpe, grito al caer, latido con poca vida
-  ouch: () => { const f = rand(185, 240); voice({ f0: f, f1: f * .7, dur: rand(.16, .26), vol: .38, form: AH, vib: 5, vibAmt: .02, attack: .008, breath: .4, bf: 1800 }); noise(.07, .18, { f: 600, f1: 150 }); },
-  deathScream: () => { voice({ f0: 290, f1: 110, dur: 1.5, vol: .42, form: AH, vib: 6, vibAmt: .05, attack: .02, breath: .45, bf: 2000 }); },
+  ouch: () => { if (pClip('ouch', .7)) return; const f = rand(185, 240); voice({ f0: f, f1: f * .7, dur: rand(.16, .26), vol: .38, form: AH, vib: 5, vibAmt: .02, attack: .008, breath: .4, bf: 1800 }); noise(.07, .18, { f: 600, f1: 150 }); },
+  deathScream: () => { if (pClip('death', .85)) return; voice({ f0: 290, f1: 110, dur: 1.5, vol: .42, form: AH, vib: 6, vibAmt: .05, attack: .02, breath: .45, bf: 2000 }); },
   // jefes: carga del cañón, ácido que burbujea y cuchillazo
   charge: () => { tone(120, 900, .8, .1, 'sawtooth', 0, .3); noise(.8, .15, { type: 'bandpass', f: 400, f1: 2400, q: 2, attack: .3 }); },
   acid: () => { noise(.5, .35, { type: 'bandpass', f: 1800, f1: 300, q: 1.5 }); for (let i = 0; i < 5; i++) tone(rand(300, 700), rand(150, 300), .08, .07, 'sine', .05 + i * .07); },
@@ -1991,9 +1991,26 @@ const ZCLIP = { 1: [0, .746], 2: [.796, .668], 3: [1.513, .524], 4: [2.087, .708
 // clasificados por duración, tono y ataque: largos y graves = gruñido o muerte, cortos y secos = quejido, agudos = mordisco o chillido
 const ZKIND = { groan: [1, 9, 15, 18, 19, 20, 23], hurt: [3, 4, 5, 6, 11, 13, 24], attack: [2, 7, 10, 12, 14, 22], death: [16, 17, 18, 21], scream: [7, 8, 10, 12], roar: [16, 17, 21] };
 const ZVOL = { groan: .5, hurt: .45, attack: .6, death: .6, scream: .55, roar: .9 };
-let zbuf = null, zvoices = 0;
+let zbuf = null, zvoices = 0, pbuf = null;
+const loadSound = url => fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject()).then(b => ac.decodeAudioData(b));
 function loadZombieVoices() {
-  fetch('sfx/zombies.wav').then(r => r.ok ? r.arrayBuffer() : Promise.reject()).then(b => ac.decodeAudioData(b)).then(b => { zbuf = b; }).catch(() => {});
+  loadSound('sfx/zombies.wav').then(b => { zbuf = b; }).catch(() => {});
+  loadSound('sfx/jugador.wav').then(b => { pbuf = b; }).catch(() => {});
+}
+// tu voz grabada: "Male Grunt/Yelling sounds" de HaelDB (OpenGameArt, CC0), 4 voces en sfx/jugador.wav.
+// Cada voz: quejidos al recibir golpes y gritos al caer, [inicio, duración] en segundos. Cada personaje tiene su voz;
+// las dos mujeres usan una voz algo más aguda (el pack solo trae voces de hombre).
+const PCLIP = [{ ouch: [[0, .488], [.538, .464], [1.052, .604], [1.706, .608]], death: [[2.364, 1.515], [3.929, 1.194], [5.172, 1.02]] },
+  { ouch: [[6.242, .314], [6.606, .564], [7.22, .28], [7.549, .321], [7.92, .524]], death: [[8.494, .679], [9.223, .583], [9.856, .58]] },
+  { ouch: [[10.486, .392], [10.928, .583], [11.561, .589], [12.2, .664]], death: [[12.914, .835], [13.799, 1.269], [15.118, 1.1]] },
+  { ouch: [[16.267, .337], [16.655, .457], [17.161, .355], [17.566, .326], [17.942, .776]], death: [[18.768, 1.469], [20.287, 1.951], [22.287, 1.585]] }];
+const PVOICE = { mike: 1, medico: 2, vaquero: 0, swat: 3, chef: 2, cura: 0, marine: 3, cientifica: 1, rockero: 2 }, PHIGH = { medico: 1.25, cientifica: 1.25 };
+function pClip(kind, vol) {
+  if (!pbuf || !ac || muted || !me) return false;
+  const [t0, dur] = pickOf(PCLIP[PVOICE[me.charId] ?? 1][kind]), s = ac.createBufferSource(), g = ac.createGain();
+  s.buffer = pbuf; s.playbackRate.value = (PHIGH[me.charId] ?? 1) * rand(.96, 1.04); g.gain.value = vol;
+  s.connect(g).connect(out); s.start(0, t0, dur);
+  return true;
 }
 // el mismo sonido sirve a todos: más agudo para corredores, más grave y lento para gordos y jefes; panorámica según el lado
 function zClip(kind, z, vol, lp) {
