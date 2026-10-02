@@ -100,6 +100,7 @@ canvas{position:fixed;inset:0;display:block;cursor:crosshair}
 .char:not(:disabled):active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
 .char:focus-visible{outline:3px solid var(--toxic);outline-offset:2px}
 .av{position:relative;flex:none;width:40px;height:50px}
+.mapsw{flex:none;width:44px;height:50px;border:2px solid var(--ink);border-radius:8px}
 .av::before{content:'';position:absolute;left:2px;top:0;width:32px;height:28px;background:var(--skin);border:2px solid var(--ink);border-radius:6px;box-shadow:inset 0 9px 0 var(--hair)}
 .av::after{content:'';position:absolute;left:10px;top:31px;width:16px;height:15px;background:var(--shirt);border:2px solid var(--ink);border-radius:3px}
 .av i{position:absolute;z-index:1;left:12px;top:15px;width:4px;height:5px;background:var(--ink);box-shadow:10px 0 0 var(--ink)}
@@ -174,12 +175,16 @@ canvas{position:fixed;inset:0;display:block;cursor:crosshair}
     <p class="muted" id="netMsg">Online: crea una sala y pasa el código, o escribe el de un amigo. Hasta 4 jugadores.</p>
     <p class="muted" id="bestTxt"></p>
     <div class="panel card">
+      <div class="row"><h2>Mapa</h2></div>
+      <div class="chars" id="maps"></div>
+    </div>
+    <div class="panel card">
       <div class="row"><h2>Personaje</h2><span class="skulls" id="skullTxt"></span></div>
       <p class="muted">Cada partida da calaveras: 10 por oleada y 1 por cada 2 bajas. Gástalas en personajes con ventajas propias.</p>
       <div class="chars" id="chars"></div>
     </div>
     <div class="panel card">
-      <p>Empiezas en la calle mayor de un pueblo tomado. Paga para abrir puertas y despejar escombros: el bar, la farmacia, la gasolinera, el parque, la comisaría, el callejón, la plaza y la iglesia. Lo cercano es barato; lo del fondo, caro. Las balas se acaban: compra munición en las pizarras o reza por una Munición máxima. Los zombis sueltan potenciadores (baja instantánea, puntos dobles, bomba nuclear…), hay nueve bebidas repartidas por el pueblo (hasta 4 a la vez), la caja misteriosa y, al fondo de la iglesia, el Pack-a-Punch.</p>
+      <p>Elige mapa: el pueblo al atardecer o el sanatorio de noche. En el pueblo empiezas en la calle mayor. Paga para abrir puertas y despejar escombros: el bar, la farmacia, la gasolinera, el parque, la comisaría, el callejón, la plaza y la iglesia. Lo cercano es barato; lo del fondo, caro. Las balas se acaban: compra munición en las pizarras o reza por una Munición máxima. Los zombis sueltan potenciadores (baja instantánea, puntos dobles, bomba nuclear…), hay nueve bebidas repartidas por el pueblo (hasta 4 a la vez), la caja misteriosa y, al fondo de la iglesia, el Pack-a-Punch.</p>
       <dl class="keys" id="keysDesk">
         <dt>WASD</dt><dd>Moverte</dd>
         <dt>Ratón</dt><dd>Apuntar y disparar (mantén el clic)</dd>
@@ -230,7 +235,7 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const rand = (a, b) => a + Math.random() * (b - a);
 const lerpA = (a, b, k) => a + ((((b - a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI) * k;
 const TOUCH = matchMedia('(pointer:coarse)').matches;
-const BREAK = 12, BOX_PRICE = 950, PAP_PRICE = 3000, START = [0, 0], MAX_PLAYERS = 4, R_PLAYER = .45;
+const BREAK = 12, BOX_PRICE = 950, PAP_PRICE = 3000, MAX_PLAYERS = 4, R_PLAYER = .45;
 const SPAWN_OFF = [[0, 0], [1.6, 0], [-1.6, 0], [0, 1.6]];
 // los carteles se pintan en canvas: esperar a la fuente (máx. 1,5 s)
 await Promise.race([document.fonts.load('40px Bungee'), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
@@ -243,12 +248,12 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 const canvas = renderer.domElement;
 const scene = new THREE.Scene();
-const SKY = 0xd98b5f;
-scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 34, 80);
+scene.background = new THREE.Color(0xd98b5f);
+scene.fog = new THREE.Fog(0xd98b5f, 34, 80);
 const camera = new THREE.PerspectiveCamera(42, 1, .1, 220);
-scene.add(new THREE.HemisphereLight(0xffd9b8, 0x3b3348, 1.5));
-// el sol sigue a la cámara para que la sombra tenga buena resolución en un mapa grande
+const hemi = new THREE.HemisphereLight(0xffd9b8, 0x3b3348, 1.5);
+scene.add(hemi);
+// el sol (o la luna) sigue a la cámara para que la sombra tenga buena resolución en un mapa grande
 const sun = new THREE.DirectionalLight(0xffc890, 2.4);
 sun.castShadow = true;
 sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
@@ -257,6 +262,9 @@ Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, n
 scene.add(sun, sun.target);
 const flash = new THREE.PointLight(0xffb060, 0, 9, 2);
 scene.add(flash);
+// linterna para los mapas de noche: un cono hacia donde apuntas y un poco de luz alrededor
+const torch = new THREE.SpotLight(0xffe2b0, 0, 20, .6, .55, 1.1), torchFill = new THREE.PointLight(0xffd9a0, 0, 7, 1.4);
+scene.add(torch, torch.target, torchFill);
 function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 
@@ -270,38 +278,15 @@ function part(w, h, d, m) {
   o.castShadow = o.receiveShadow = true;
   return o;
 }
-const put = (obj, x, y, z, parent) => { obj.position.set(x, y, z); (parent ?? scene).add(obj); return obj; };
+// ROOT: grupo del mapa que se está construyendo (o la escena)
+let ROOT = scene;
+const put = (obj, x, y, z, parent) => { obj.position.set(x, y, z); (parent ?? ROOT).add(obj); return obj; };
 
-// ---------- el pueblo: rejilla de 1 m ----------
+// ---------- mapa activo: todo esto cambia al elegir mapa (setMap) ----------
 // Las zonas son rectángulos tallados en un bloque macizo; lo que no es suelo es muro o azotea.
-// Rectángulos [x0, z0, x1, z1) en metros. Norte = -z (arriba en pantalla).
-const ZONES = {
-  A: { name: 'Calle Mayor', ext: 1, floor: 'street', rects: [[-24, -5, 24, 5]] },
-  B: { name: 'Bar El Cruce', floor: 'wood', wall: 0x8a4a34, rects: [[-22, -17, -6, -6]] },
-  C: { name: 'Farmacia', floor: 'tiles', wall: 0xd9d2c0, rects: [[4, 6, 18, 16]] },
-  H: { name: 'Gasolinera', ext: 1, floor: 'concrete', rects: [[-46, -12, -25, 14]] },
-  G: { name: 'Parque', ext: 1, floor: 'grass', rects: [[25, -21, 46, 20]] },
-  D: { name: 'Callejón', ext: 1, floor: 'alley', rects: [[-20, -34, -16, -18], [-20, -34, 6, -30]] },
-  I: { name: 'Comisaría', floor: 'carpet', wall: 0x5d6b7a, rects: [[-24, 6, -4, 22]] },
-  E: { name: 'Plaza', ext: 1, floor: 'plaza', rects: [[7, -40, 30, -24]] },
-  F: { name: 'Iglesia', floor: 'church', wall: 0xb5aa98, rects: [[31, -42, 46, -22]] },
-};
-const ZONE_LIST = Object.values(ZONES);
-// cuanto más lejos de la calle, más cara; 'debris' = escombros en exteriores, 'wood' = puerta tapiada
-const DOORS = [
-  { a: 'A', b: 'B', r: [-12, -6, -8, -5], price: 750, kind: 'wood' },
-  { a: 'A', b: 'C', r: [9, 5, 13, 6], price: 1000, kind: 'wood' },
-  { a: 'A', b: 'H', r: [-25, -2, -24, 2], price: 1250, kind: 'debris' },
-  { a: 'A', b: 'G', r: [24, -2, 25, 2], price: 1250, kind: 'debris' },
-  { a: 'B', b: 'D', r: [-20, -18, -16, -17], price: 1500, kind: 'wood' },
-  { a: 'H', b: 'I', r: [-25, 9, -24, 13], price: 1750, kind: 'wood' },
-  { a: 'D', b: 'E', r: [6, -34, 7, -30], price: 1750, kind: 'debris' },
-  { a: 'E', b: 'F', r: [30, -33, 31, -29], price: 2250, kind: 'wood' },
-  { a: 'G', b: 'F', r: [36, -22, 40, -21], price: 2250, kind: 'wood' },
-];
-const MX0 = -48, MX1 = 48, MZ0 = -44, MZ1 = 24, GW = MX1 - MX0, GH = MZ1 - MZ0;
-const grid = new Uint8Array(GW * GH);     // 0 macizo, 1 suelo, 2 objeto sólido, 3 puerta cerrada
-const zoneGrid = new Uint8Array(GW * GH); // índice de zona + 1
+// Rectángulos [x0, z0, x1, z1) en metros. Norte = -z (arriba en pantalla). Rejilla de 1 m.
+let MAP = null, ZONES, ZONE_LIST, DOORS, BOX_SPOTS, START, interact, FACADES, NIGHT = false;
+let MX0, MX1, MZ0, MZ1, GW, GH, grid, zoneGrid;   // grid: 0 macizo, 1 suelo, 2 objeto sólido, 3 puerta cerrada
 const gi = (cx, cz) => cz * GW + cx;
 const cellX = x => Math.floor(x - MX0), cellZ = z => Math.floor(z - MZ0);
 const cellAt = (cx, cz) => cx < 0 || cz < 0 || cx >= GW || cz >= GH ? 0 : grid[gi(cx, cz)];
@@ -311,8 +296,6 @@ function fill(r, v, zi) {
     const i = gi(cellX(x), cellZ(z)); grid[i] = v; if (zi !== undefined) zoneGrid[i] = zi;
   }
 }
-ZONE_LIST.forEach((Z, i) => Z.rects.forEach(r => fill(r, 1, i + 1)));
-for (const d of DOORS) fill(d.r, 3, 0);
 const zoneAt = (x, z) => { const cx = cellX(x), cz = cellZ(z); return cx < 0 || cz < 0 || cx >= GW || cz >= GH ? null : ZONE_LIST[zoneGrid[gi(cx, cz)] - 1] ?? null; };
 const blocked = (x, z, r) => { for (let cz = cellZ(z - r); cz <= cellZ(z + r); cz++) for (let cx = cellX(x - r); cx <= cellX(x + r); cx++) if (cellAt(cx, cz) !== 1) return true; return false; };
 // colisión círculo contra celdas macizas
@@ -334,6 +317,8 @@ function groundTexture() {
   const g = c.getContext('2d'), X = x => (x - MX0) * PX, Z = z => (z - MZ0) * PX;
   const noiseFill = (n, a, b) => { for (let i = 0; i < n; i++) { g.fillStyle = Math.random() < .5 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${b})`; g.fillRect(Math.random() * c.width, Math.random() * c.height, 2, 2); } };
   const lines = (x, y, w, h, step, col, lw = 1) => { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); for (let v = x; v <= x + w; v += step) { g.moveTo(v, y); g.lineTo(v, y + h); } for (let v = y; v <= y + h; v += step) { g.moveTo(x, v); g.lineTo(x + w, v); } g.stroke(); };
+  const blobs = (x, y, w, h, n, col, rx = [8, 22], ry = [5, 12]) => { for (let i = 0; i < n; i++) { g.fillStyle = col; g.beginPath(); g.ellipse(x + Math.random() * w, y + Math.random() * h, rand(...rx), rand(...ry), rand(0, 3), 0, 7); g.fill(); } };
+  const blood = (x, y, w, h, n) => { blobs(x, y, w, h, n, 'rgba(90,10,10,.55)', [6, 26], [4, 14]); for (let i = 0; i < n * 3; i++) { g.fillStyle = 'rgba(110,12,12,.6)'; g.beginPath(); g.arc(x + Math.random() * w, y + Math.random() * h, rand(1, 3), 0, 7); g.fill(); } };
   const F = {
     street(x, y, w, h) {
       g.fillStyle = '#9b958b'; g.fillRect(x, y, w, h); lines(x, y, w, h, 2 * PX, 'rgba(0,0,0,.15)');
@@ -347,15 +332,12 @@ function groundTexture() {
       for (let v = y; v < y + h; v += PX / 2) { g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x, v, w, 1); for (let u = x + Math.random() * 30; u < x + w; u += rand(25, 45)) g.fillRect(u, v, 1, PX / 2); }
     },
     tiles(x, y, w, h) { for (let v = 0; v * PX < h; v++) for (let u = 0; u * PX < w; u++) { g.fillStyle = (u + v) % 2 ? '#e9e6dc' : '#d6d0c0'; g.fillRect(x + u * PX, y + v * PX, PX, PX); } },
-    concrete(x, y, w, h) {
-      g.fillStyle = '#8f8b84'; g.fillRect(x, y, w, h); lines(x, y, w, h, 4 * PX, 'rgba(0,0,0,.2)', 2);
-      for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(20,15,20,.25)'; g.beginPath(); g.ellipse(x + Math.random() * w, y + Math.random() * h, rand(8, 22), rand(5, 12), rand(0, 3), 0, 7); g.fill(); }
-    },
+    concrete(x, y, w, h) { g.fillStyle = '#8f8b84'; g.fillRect(x, y, w, h); lines(x, y, w, h, 4 * PX, 'rgba(0,0,0,.2)', 2); blobs(x, y, w, h, 8, 'rgba(20,15,20,.25)'); },
     carpet(x, y, w, h) { g.fillStyle = '#4b5a6e'; g.fillRect(x, y, w, h); for (let i = 0; i < w * h / 6; i++) { g.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.12)'; g.fillRect(x + Math.random() * w, y + Math.random() * h, 1, 1); } },
     alley(x, y, w, h) {
       g.fillStyle = '#45414a'; g.fillRect(x, y, w, h);
       for (let v = y; v < y + h; v += 5) for (let u = x + (v / 5 % 2) * 3; u < x + w; u += 6) { g.fillStyle = `rgba(${Math.random() < .5 ? '255,255,255' : '0,0,0'},${rand(.03, .12)})`; g.fillRect(u, v, 5, 4); }
-      for (let i = 0; i < 5; i++) { g.fillStyle = 'rgba(30,40,60,.35)'; g.beginPath(); g.ellipse(x + Math.random() * w, y + Math.random() * h, rand(10, 25), rand(6, 12), rand(0, 3), 0, 7); g.fill(); }
+      blobs(x, y, w, h, 5, 'rgba(30,40,60,.35)', [10, 25], [6, 12]);
     },
     plaza(x, y, w, h) {
       g.fillStyle = '#b3a893'; g.fillRect(x, y, w, h); lines(x, y, w, h, 1.5 * PX, 'rgba(0,0,0,.14)');
@@ -371,8 +353,30 @@ function groundTexture() {
       g.strokeStyle = '#a08a62'; g.lineWidth = 2.2 * PX; g.lineCap = 'round'; g.lineJoin = 'round';
       g.beginPath(); g.moveTo(X(25), Z(0)); g.lineTo(X(31), Z(0)); g.lineTo(X(37), Z(-10)); g.lineTo(X(38), Z(-21)); g.moveTo(X(31), Z(0)); g.lineTo(X(32), Z(12)); g.stroke();
     },
+    // --- sanatorio ---
+    grave(x, y, w, h) {
+      g.fillStyle = '#1f2a1c'; g.fillRect(x, y, w, h);
+      for (let i = 0; i < w * h / 10; i++) { g.fillStyle = Math.random() < .5 ? 'rgba(120,150,90,.18)' : 'rgba(0,0,0,.3)'; g.fillRect(x + Math.random() * w, y + Math.random() * h, 1, 3); }
+      g.fillStyle = '#3a2e22'; g.fillRect(X(-1.5), y, 3 * PX, h); g.fillRect(x, Z(1.5), w, 2 * PX);
+      blobs(x, y, w, h, 10, 'rgba(10,14,24,.5)', [10, 30], [6, 14]); blood(x, y, w, h, 3);
+    },
+    stone(x, y, w, h) { g.fillStyle = '#3a3638'; g.fillRect(x, y, w, h); lines(x, y, w, h, 2 * PX, 'rgba(0,0,0,.35)', 2); g.fillStyle = '#4a1414'; g.fillRect(X(-16), y, 3 * PX, h); blood(x, y, w, h, 6); },
+    morgue(x, y, w, h) {
+      for (let v = 0; v * PX < h; v++) for (let u = 0; u * PX < w; u++) { g.fillStyle = (u + v) % 2 ? '#8e958f' : '#7d847e'; g.fillRect(x + u * PX, y + v * PX, PX, PX); }
+      g.fillStyle = '#222'; for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(x + rand(.2, .8) * w, y + rand(.2, .8) * h, 5, 0, 7); g.fill(); }
+      blood(x, y, w, h, 10);
+    },
+    surgery(x, y, w, h) { for (let v = 0; v * PX < h; v++) for (let u = 0; u * PX < w; u++) { g.fillStyle = (u + v) % 2 ? '#4f6b5e' : '#45604f'; g.fillRect(x + u * PX, y + v * PX, PX, PX); } blood(x, y, w, h, 16); },
+    mud(x, y, w, h) { g.fillStyle = '#2c271f'; g.fillRect(x, y, w, h); blobs(x, y, w, h, 14, 'rgba(20,26,40,.6)', [12, 30], [6, 16]); blobs(x, y, w, h, 20, 'rgba(70,60,40,.4)', [3, 10], [2, 6]); },
+    ward(x, y, w, h) {
+      for (let v = 0; v * PX < h; v += 2) for (let u = 0; u * PX < w; u += 2) { g.fillStyle = (u + v) % 4 ? '#5b5446' : '#4b4538'; g.fillRect(x + u * PX, y + v * PX, 2 * PX, 2 * PX); }
+      g.save(); g.fillStyle = 'rgba(140,15,15,.85)'; g.font = `900 ${3 * PX}px Bungee, Impact, sans-serif`; g.translate(X(22), Z(16)); g.rotate(-.08); g.fillText('AYUDA', 0, 0); g.restore();
+      g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = 1; for (let i = 0; i < 40; i++) { const sx = x + Math.random() * w, sy = y + Math.random() * h; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + rand(-14, 14), sy + rand(4, 16)); g.stroke(); }
+      blood(x, y, w, h, 8);
+    },
+    ash(x, y, w, h) { g.fillStyle = '#262224'; g.fillRect(x, y, w, h); lines(x, y, w, h, 3 * PX, 'rgba(0,0,0,.4)', 2); blobs(x, y, w, h, 18, 'rgba(160,150,140,.18)', [6, 20], [4, 12]); blood(x, y, w, h, 4); },
   };
-  g.fillStyle = '#37323b'; g.fillRect(0, 0, c.width, c.height); // azoteas
+  g.fillStyle = MAP.env.roof; g.fillRect(0, 0, c.width, c.height); // azoteas
   const paint = (r, floor) => { const x = X(r[0]), y = Z(r[1]), w = (r[2] - r[0]) * PX, h = (r[3] - r[1]) * PX; g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); F[floor](x, y, w, h); g.restore(); };
   for (const Zn of ZONE_LIST) for (const r of Zn.rects) paint(r, Zn.floor);
   for (const d of DOORS) paint(d.r, ZONES[d.a].floor);
@@ -381,14 +385,8 @@ function groundTexture() {
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return t;
 }
-{
-  const f = new THREE.Mesh(new THREE.PlaneGeometry(GW, GH), new THREE.MeshLambertMaterial({ map: groundTexture() }));
-  f.rotation.x = -Math.PI / 2; f.receiveShadow = true; put(f, (MX0 + MX1) / 2, 0, (MZ0 + MZ1) / 2);
-  const under = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), smat(0x2f2a33)); under.rotation.x = -Math.PI / 2; put(under, 0, -.02, 0);
-}
 
 // ---------- muros: celdas macizas que tocan suelo; los que quedan al sur de una zona son bajos para no tapar la cámara ----------
-const FACADES = [0xc98a5a, 0x8aa0a8, 0xd8c79a, 0x9c7a9a, 0xb86a5a, 0x7f9a7a];
 const insideCell = (cx, cz) => cellAt(cx, cz) !== 0;
 function wallStyle(cx, cz) {
   let zone = null;
@@ -403,24 +401,46 @@ function wallStyle(cx, cz) {
   if (zone && !zone.ext) return { col: zone.wall, h: low ? .9 : 1.8, facade: false };
   return { col: FACADES[(Math.floor(cx / 6) + Math.floor(cz / 6) * 3) % FACADES.length], h: low ? .9 : 3.2, facade: !low };
 }
-for (let cz = 0; cz < GH; cz++) {
-  let run = null;
-  const flush = () => {
-    if (!run) return;
-    const w = run.end - run.start, x = MX0 + run.start + w / 2, z = MZ0 + cz + .5, s = run.s;
-    put(part(w, s.h, 1, s.col), x, s.h / 2, z);
-    put(part(w + .08, .14, 1.08, 0x4a4248), x, s.h + .07, z);
-    if (s.facade) put(part(w + .02, .55, 1.02, 0x2c3442), x, 2.1, z);
-    run = null;
-  };
-  for (let cx = 0; cx < GW; cx++) {
-    let wall = false;
-    if (grid[gi(cx, cz)] === 0) for (let dz = -1; dz <= 1 && !wall; dz++) for (let dx = -1; dx <= 1; dx++) if (insideCell(cx + dx, cz + dz)) { wall = true; break; }
-    if (!wall) { flush(); continue; }
-    const s = wallStyle(cx, cz), key = s.col + '|' + s.h;
-    if (run && run.key === key) run.end++; else { flush(); run = { key, s, start: cx, end: cx + 1 }; }
+function buildWalls() {
+  for (let cz = 0; cz < GH; cz++) {
+    let run = null;
+    const flush = () => {
+      if (!run) return;
+      const w = run.end - run.start, x = MX0 + run.start + w / 2, z = MZ0 + cz + .5, s = run.s;
+      put(part(w, s.h, 1, s.col), x, s.h / 2, z);
+      put(part(w + .08, .14, 1.08, MAP.env.cap), x, s.h + .07, z);
+      if (s.facade) put(part(w + .02, .55, 1.02, MAP.env.band), x, 2.1, z);
+      run = null;
+    };
+    for (let cx = 0; cx < GW; cx++) {
+      let wall = false;
+      if (grid[gi(cx, cz)] === 0) for (let dz = -1; dz <= 1 && !wall; dz++) for (let dx = -1; dx <= 1; dx++) if (insideCell(cx + dx, cz + dz)) { wall = true; break; }
+      if (!wall) { flush(); continue; }
+      const s = wallStyle(cx, cz), key = s.col + '|' + s.h;
+      if (run && run.key === key) run.end++; else { flush(); run = { key, s, start: cx, end: cx + 1 }; }
+    }
+    flush();
   }
-  flush();
+}
+// edificios de fondo (sin el lado sur: taparían la cámara)
+function windowTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 64);
+  for (let y = 5; y < 64; y += 16) for (let x = 5; x < 64; x += 16) { g.fillStyle = Math.random() < .3 ? '#ffe2a0' : '#3a3445'; g.fillRect(x, y, 8, 10); }
+  return c;
+}
+const winCanvas = windowTex();
+function backdrop(cols) {
+  const list = [];
+  for (let x = MX0 - 7; x <= MX1 + 7; x += 11) list.push([x, MZ0 - 7, 0]);
+  for (let z = MZ0 + 5; z <= MZ1 + 6; z += 11) list.push([MX0 - 7, z, 1], [MX1 + 7, z, 1]);
+  list.forEach(([x, z, side], i) => {
+    const w = rand(8, 10.5), h = rand(7, 18), t = new THREE.CanvasTexture(winCanvas);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(Math.round(w / 3), Math.round(h / 3)); t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(boxGeo(w, h, 9), new THREE.MeshLambertMaterial({ color: cols[i % cols.length], map: t }));
+    if (side) m.rotation.y = Math.PI / 2;
+    m.receiveShadow = true; put(m, x, h / 2, z);
+  });
 }
 
 // cartel flotante que siempre mira a cámara
@@ -438,7 +458,7 @@ function label(title, sub) {
     t.needsUpdate = true;
   };
   draw(title, sub);
-  scene.add(sprite);
+  ROOT.add(sprite);
   return { sprite, draw };
 }
 // nombre sobre la cabeza de los compañeros
@@ -453,7 +473,7 @@ function nameTag(text) {
   return s;
 }
 
-// ---------- decorado ----------
+// ---------- piezas de decorado ----------
 // prop: ocupa celdas [x0,z0,x1,z1) y coloca el grupo en su centro
 function prop(r, g, solidCells = true) {
   if (solidCells) fill(r, 2);
@@ -471,7 +491,7 @@ const barrelGeo = new THREE.CylinderGeometry(.45, .45, 1.1, 14);
 function barrel(x, z, fire) {
   const m = new THREE.Mesh(barrelGeo, smat(fire ? 0x3a3d42 : 0xc2412d)); m.castShadow = m.receiveShadow = true;
   const g = grp([m, 0, .55, 0]);
-  if (fire) put(part(.7, .2, .7, bmat(0xff8a2a)), 0, 1.15, 0, g);
+  if (fire) { put(part(.7, .2, .7, bmat(0xff8a2a)), 0, 1.15, 0, g); if (NIGHT) flicker(put(new THREE.PointLight(0xff7a2a, 10, 7, 1.6), 0, 1.6, 0, g), .5); }
   return prop([x, z, x + 1, z + 1], g);
 }
 const crate = (x, z) => prop([x, z, x + 1, z + 1], grp([part(.95, .95, .95, 0xb07a3f), 0, .48, 0]));
@@ -482,8 +502,9 @@ function tree(x, z) {
   return prop([x, z, x + 1, z + 1], grp([t, 0, .7, 0], [l, 0, 2.1, 0]));
 }
 const bench = r => prop(r, grp([part(2, .12, .6, 0x7a5634), 0, .5, 0], [part(2, .5, .1, 0x7a5634), 0, .8, -.28], [part(.1, .5, .5, 0x2a2a2e), -.9, .25, 0], [part(.1, .5, .5, 0x2a2a2e), .9, .25, 0]));
-function lamp(x, z) {
-  const g = grp([part(.14, 3.2, .14, 0x2a2a2e), 0, 1.6, 0], [part(.14, .1, .9, 0x2a2a2e), 0, 3.15, .4], [part(.4, .12, .4, bmat(0xffe2a0)), 0, 3.05, .8]);
+function lamp(x, z, col = 0xffe2a0) {
+  const g = grp([part(.14, 3.2, .14, 0x2a2a2e), 0, 1.6, 0], [part(.14, .1, .9, 0x2a2a2e), 0, 3.15, .4], [part(.4, .12, .4, bmat(col)), 0, 3.05, .8]);
+  if (NIGHT) flicker(put(new THREE.PointLight(col, 14, 11, 1.4), 0, 2.8, .8, g), .9);
   return prop([x, z, x + 1, z + 1], g, false);
 }
 function shelf(r) {
@@ -492,58 +513,384 @@ function shelf(r) {
   for (let i = 0; i < w * 2 - 1; i++) for (const s of [-1, 1]) put(part(.4, .35, .12, cols[(i * 3 + r[0]) % 5]), -w / 2 + .5 + i * .5, 1.1, s * .48, g);
   return prop(r, g);
 }
-// A · calle mayor
-prop([-19, -3, -15, -1], car(0xd9483b));
-prop([12, 1, 16, 3], car(0x3f88c5));
-prop([-8, 1, -4, 3], (() => { const g = car(0xf2c12e); put(part(.6, .25, .3, 0x1d1a17), -.2, 1.98, 0, g); return g; })());
-prop([20, -5, 21, -4], grp([part(.7, 1, .7, 0x3f6b4a), 0, .5, 0]));
-prop([-23, 4, -22, 5], grp([part(.7, 1, .7, 0x3f6b4a), 0, .5, 0]));
-for (const [x, z] of [[-21, -5], [7, -5], [-14, 4], [19, 4]]) lamp(x, z);
-put(part(.06, .8, .25, bmat(0x3fbf5a)), 15, 1.6, 5.5); put(part(.06, .25, .8, bmat(0x3fbf5a)), 15, 1.6, 5.5);
-// B · bar
-prop([-9, -16, -7, -11], grp([part(2, 1.1, 5, 0x5a3424), 0, .55, 0], [part(2.1, .1, 5.1, 0xa87a4a), 0, 1.15, 0]));
-prop([-18, -13, -15, -11], grp([part(3, .75, 2, 0x5a3424), 0, .38, 0], [part(2.7, .08, 1.7, 0x2f7a4a), 0, .79, 0]));
-for (const [x, z] of [[-13, -15], [-20, -9]]) prop([x, z, x + 2, z + 2], grp([part(1.6, .08, 1.6, 0xa87a4a), 0, .78, 0], [part(.2, .75, .2, 0x3a2414), 0, .38, 0]));
-prop([-22, -16, -21, -15], grp([part(.9, 1.6, .7, 0x6a2c8a), 0, .8, 0], [part(.7, .5, .05, bmat(0xff6bd6)), 0, 1.1, .36]));
-// C · farmacia
-shelf([4, 9, 8, 10]); shelf([14, 9, 18, 10]); shelf([4, 12, 8, 13]); shelf([14, 12, 18, 13]);
-// H · gasolinera
-for (const z of [-7, 2]) {
-  const g = grp([part(1.6, .2, 5, 0x9a968e), 0, .1, 0]);
-  for (const pz of [-1.3, 1.3]) { put(part(.7, 1.5, .5, 0xd8392b), 0, .95, pz, g); put(part(.72, .3, .52, 0xf2efe6), 0, 1.85, pz, g); put(part(.05, .3, .3, bmat(0x9fe0ff)), .37, 1.3, pz, g); }
-  prop([-38, z, -36, z + 5], g);
+// luces que parpadean (solo de noche): p = probabilidad de apagón por segundo
+function flicker(light, p = .6) { MAP.flickers.push({ light, base: light.intensity, p, off: 0 }); return light; }
+// --- piezas de terror ---
+const deadTrunk = new THREE.CylinderGeometry(.12, .28, 2.6, 6);
+function deadTree(x, z, solid = true) {
+  const t = new THREE.Mesh(deadTrunk, smat(0x2a221c)); t.castShadow = true;
+  const g = grp([t, 0, 1.3, 0]);
+  for (let i = 0; i < 4; i++) { const b = put(part(.12, 1.2, .12, 0x2a221c), 0, 1.6 + i * .3, 0, g); b.rotation.set(rand(-1.1, 1.1), rand(0, 6), rand(-1.1, 1.1)); b.translateY(.5); }
+  g.rotation.y = rand(0, 6);
+  return prop([x, z, x + 1, z + 1], g, solid);
 }
-prop([-45, -11, -40, -6], grp([part(5, 2.2, 5, 0xece4d4), 0, 1.1, 0], [part(5.1, .35, 5.1, 0xd8392b), 0, 2.3, 0], [part(3, .9, .05, bmat(0x9fc6d8)), 0, 1.3, 2.51]));
-prop([-32, 8, -28, 10], car(0x6dbf67));
-barrel(-44, 10); barrel(-43, 11); barrel(-27, -11);
-// I · comisaría
-for (const [x, z] of [[-20, 10], [-14, 10], [-20, 15], [-14, 15]]) prop([x, z, x + 2, z + 1], grp([part(2, .8, 1, 0x7a5634), 0, .4, 0], [part(.6, .45, .1, 0x1d1a17), 0, 1.05, -.2], [part(.5, .35, .02, bmat(0x7fc3ff)), 0, 1.05, -.14]));
-prop([-9, 6, -5, 7], grp([part(4, 2, .9, 0x7a8a99), 0, 1, 0]));
-prop([-9, 15, -5, 16], (() => { const g = new THREE.Group(); for (let i = 0; i < 9; i++) put(part(.08, 1.8, .08, 0x2a2a2e), -1.9 + i * .47, .9, 0, g); return g; })());
-// D · callejón
-prop([-8, -34, -6, -33], grp([part(2, 1.2, 1, 0x2f5a3a), 0, .6, 0], [part(2.05, .1, 1.05, 0x24402c), 0, 1.25, 0]));
-barrel(-20, -26, true); barrel(2, -31, true); crate(-17, -33); crate(-1, -34);
-// E · plaza
-{
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.5, .6, 24), smat(0xa89c86));
-  const water = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, .05, 24), bmat(0x5fa8d8));
-  const col = new THREE.Mesh(new THREE.CylinderGeometry(.3, .4, 1.6, 10), smat(0xa89c86));
-  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(.9, .5, .3, 16), smat(0xa89c86));
-  base.castShadow = col.castShadow = bowl.castShadow = true;
-  prop([16, -35, 21, -30], grp([base, 0, .3, 0], [water, 0, .58, 0], [col, 0, 1.1, 0], [bowl, 0, 1.9, 0]));
+function grave(x, z) {
+  const k = Math.random(), g = new THREE.Group(), stone = [0x6a6a70, 0x5a5a62, 0x7a7670][Math.random() * 3 | 0];
+  if (k < .45) { put(part(.75, .95, .2, stone), 0, .47, -.25, g); put(part(.75, .2, .22, stone), 0, 1.02, -.25, g); }
+  else if (k < .75) { put(part(.14, 1.2, .14, 0x4a3a2a), 0, .6, -.25, g); put(part(.7, .14, .14, 0x4a3a2a), 0, .9, -.25, g); }
+  else { const s = put(part(.75, .7, .2, stone), 0, .3, -.25, g); s.rotation.z = rand(-.5, .5); s.rotation.x = rand(-.3, .2); }
+  put(part(.8, .08, 1.3, 0x2a2018), 0, .04, .45, g);
+  if (Math.random() < .3) put(part(.08, .18, .08, bmat(0xffd27a)), rand(-.3, .3), .09, .1, g);
+  g.rotation.y = rand(-.15, .15);
+  return prop([x, z, x + 1, z + 1], g);
 }
-for (const [x, z] of [[9, -38], [27, -38], [9, -27], [27, -27]]) tree(x, z);
-bench([12, -30, 14, -29]); bench([23, -36, 25, -35]);
-// F · iglesia
-for (const z of [-38, -35, -32, -29, -26]) for (const [x0, x1] of [[33, 37], [39, 44]]) prop([x0, z, x1, z + 1], grp([part(x1 - x0 - .1, .45, .7, 0x6b4423), 0, .45, 0], [part(x1 - x0 - .1, .5, .1, 0x5a3a1e), 0, .85, .35]));
-for (const [x, c] of [[33, 0xd8392b], [37.5, 0x3f88c5], [42, 0xffc53d]]) put(part(1.2, 1, .05, bmat(c)), x, 1.2, -41.97);
-// G · parque
-{
-  const pond = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, .25, 24), bmat(0x4f8fc0)), rim = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.3, .35, 24), smat(0x8a8072));
-  prop([34, 2, 40, 8], grp([rim, 0, .17, 0], [pond, 0, .24, 0]));
+function candles(x, z, n = 5, parent) { for (let i = 0; i < n; i++) { const h = rand(.15, .4); put(part(.07, h, .07, 0xe8e0c8), x + rand(-.35, .35), h / 2, z + rand(-.35, .35), parent); put(part(.05, .07, .05, bmat(0xffc04a)), x + rand(-.35, .35), h + .04, z + rand(-.35, .35), parent); } }
+function coffin(r, open) {
+  const vertical = r[3] - r[1] > r[2] - r[0], g = grp([part(.9, .5, 2, 0x3a2414), 0, .25, 0], [part(.8, .05, 1.9, open ? 0x5a0f12 : 0x4a2e1a), 0, .52, 0]);
+  if (open) { put(part(.9, .08, 2, 0x4a2e1a), .55, .3, 0, g).rotation.z = 1.2; put(part(.32, .22, .32, 0xc8d0b8), 0, .62, -.7, g); }
+  if (!vertical) g.rotation.y = Math.PI / 2;
+  return prop(r, g);
 }
-for (const [x, z] of [[28, -16], [42, -12], [30, 10], [43, 15], [27, 14], [40, -7], [31, -6], [44, -19]]) tree(x, z);
-bench([30, -11, 32, -10]); bench([28, 4, 30, 5]); lamp(33, -2); lamp(41, 11);
+function gurney(r, body = true) {
+  const vertical = r[3] - r[1] > r[2] - r[0], g = grp([part(1, .08, 2, 0xb8bec4), 0, .8, 0], [part(.06, .8, .06, 0x8a9096), -.45, .4, -.9], [part(.06, .8, .06, 0x8a9096), .45, .4, -.9], [part(.06, .8, .06, 0x8a9096), -.45, .4, .9], [part(.06, .8, .06, 0x8a9096), .45, .4, .9]);
+  if (body) { put(part(.7, .3, 1.7, 0xe8e6dc), 0, .99, .05, g); put(part(.38, .28, .32, 0xe8e6dc), 0, 1.1, -.72, g); if (Math.random() < .7) put(part(.5, .02, .6, 0x7a0f12), rand(-.1, .1), 1.15, rand(-.2, .4), g); }
+  if (!vertical) g.rotation.y = Math.PI / 2;
+  return prop(r, g);
+}
+function wheelchair(x, z) {
+  const g = grp([part(.6, .08, .6, 0x2a2a2e), 0, .5, 0], [part(.6, .6, .08, 0x2a2a2e), 0, .8, -.3], [part(.06, .7, .7, 0x5a5f66), -.35, .35, 0], [part(.06, .7, .7, 0x5a5f66), .35, .35, 0]);
+  g.rotation.set(rand(-.15, .15), rand(0, 6), Math.random() < .3 ? 1.4 : 0);
+  return prop([x, z, x + 1, z + 1], g);
+}
+const bodyBag = (x, z, rot) => put(grp([part(.6, .25, 1.8, 0x15161a), 0, .13, 0]), x, 0, z).rotation.y = rot ?? rand(0, 3);
+function bonesPile(x, z) { const g = put(new THREE.Group(), x, 0, z); for (let i = 0; i < 6; i++) put(part(rand(.3, .6), .07, .08, 0xd8d2bc), rand(-.4, .4), .05, rand(-.4, .4), g).rotation.y = rand(0, 3); put(part(.25, .22, .25, 0xd8d2bc), rand(-.2, .2), .11, rand(-.2, .2), g); }
+function cobweb(x, y, z, rot = 0) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), new THREE.MeshBasicMaterial({ color: 0xdfe6ea, transparent: true, opacity: .16, side: THREE.DoubleSide, depthWrite: false })); m.rotation.set(-.5, rot, .6); put(m, x, y, z); }
+function oven(r) {
+  const g = grp([part(3, 2.4, 1.8, 0x2a2628), 0, 1.2, 0], [part(1.4, .9, .06, bmat(0xff6a1a)), 0, .8, .91], [part(.5, 1.8, .5, 0x1e1b1c), .9, 3, -.4]);
+  flicker(put(new THREE.PointLight(0xff5a1a, 16, 9, 1.5), 0, 1, 1.4, g), .35);
+  return prop(r, g);
+}
+const chain = (x, z, len = 2.2) => { const g = put(new THREE.Group(), x, 0, z); for (let i = 0; i < len / .22; i++) put(part(.07, .16, .03, 0x55575c), 0, 3.2 - i * .22, 0, g).rotation.y = i % 2 * 1.57; put(part(.12, .2, .05, 0x55575c), 0, 3.2 - len - .1, 0, g); };
+const mistTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(190,205,230,.55)'); gr.addColorStop(1, 'rgba(190,205,230,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+function mist(rects, n) {
+  for (let i = 0; i < n; i++) {
+    const r = rects[Math.random() * rects.length | 0];
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: mistTex, transparent: true, opacity: rand(.18, .35), depthWrite: false, fog: false }));
+    s.scale.set(rand(5, 9), rand(2.5, 4), 1); put(s, rand(r[0], r[2]), .5, rand(r[1], r[3]));
+    MAP.mists.push({ s, vx: rand(-.3, .3), r });
+  }
+}
+
+// ---------- mapas ----------
+const ENV_DAY = { sky: 0xd98b5f, fog: [34, 80], hemi: [0xffd9b8, 0x3b3348, 1.5], sun: [0xffc890, 2.4], under: 0x2f2a33, roof: '#37323b', cap: 0x4a4248, band: 0x2c3442 };
+const ENV_NIGHT = { sky: 0x07080d, fog: [16, 44], hemi: [0x6a7aaa, 0x1c1620, .8], sun: [0x9fb4ff, 1], under: 0x0d0c10, roof: '#141216', cap: 0x1e1b20, band: 0x0f1218, night: 1 };
+const MAPS = {
+  pueblo: {
+    id: 'pueblo', name: 'El Pueblo', desc: 'Atardecer en la calle mayor: bar, farmacia, gasolinera, comisaría, plaza e iglesia.', env: ENV_DAY,
+    bounds: [-48, -44, 48, 24], start: [0, 0], facades: [0xc98a5a, 0x8aa0a8, 0xd8c79a, 0x9c7a9a, 0xb86a5a, 0x7f9a7a],
+    zones: {
+      A: { name: 'Calle Mayor', ext: 1, floor: 'street', rects: [[-24, -5, 24, 5]] },
+      B: { name: 'Bar El Cruce', floor: 'wood', wall: 0x8a4a34, rects: [[-22, -17, -6, -6]] },
+      C: { name: 'Farmacia', floor: 'tiles', wall: 0xd9d2c0, rects: [[4, 6, 18, 16]] },
+      H: { name: 'Gasolinera', ext: 1, floor: 'concrete', rects: [[-46, -12, -25, 14]] },
+      G: { name: 'Parque', ext: 1, floor: 'grass', rects: [[25, -21, 46, 20]] },
+      D: { name: 'Callejón', ext: 1, floor: 'alley', rects: [[-20, -34, -16, -18], [-20, -34, 6, -30]] },
+      I: { name: 'Comisaría', floor: 'carpet', wall: 0x5d6b7a, rects: [[-24, 6, -4, 22]] },
+      E: { name: 'Plaza', ext: 1, floor: 'plaza', rects: [[7, -40, 30, -24]] },
+      F: { name: 'Iglesia', floor: 'church', wall: 0xb5aa98, rects: [[31, -42, 46, -22]] },
+    },
+    // cuanto más lejos de la calle, más cara; 'debris' = escombros en exteriores, 'wood' = puerta tapiada
+    doors: [
+      { a: 'A', b: 'B', r: [-12, -6, -8, -5], price: 750, kind: 'wood' },
+      { a: 'A', b: 'C', r: [9, 5, 13, 6], price: 1000, kind: 'wood' },
+      { a: 'A', b: 'H', r: [-25, -2, -24, 2], price: 1250, kind: 'debris' },
+      { a: 'A', b: 'G', r: [24, -2, 25, 2], price: 1250, kind: 'debris' },
+      { a: 'B', b: 'D', r: [-20, -18, -16, -17], price: 1500, kind: 'wood' },
+      { a: 'H', b: 'I', r: [-25, 9, -24, 13], price: 1750, kind: 'wood' },
+      { a: 'D', b: 'E', r: [6, -34, 7, -30], price: 1750, kind: 'debris' },
+      { a: 'E', b: 'F', r: [30, -33, 31, -29], price: 2250, kind: 'wood' },
+      { a: 'G', b: 'F', r: [36, -22, 40, -21], price: 2250, kind: 'wood' },
+    ],
+    wallBuys: [{ id: 'uzi', price: 500, x: 3, z: -5, n: [0, 1] }, { id: 'escopeta', price: 900, x: -46, z: 4, n: [1, 0] }, { id: 'lanzallamas', price: 1500, x: -24, z: 18, n: [1, 0] }],
+    // máquinas de bebidas: 2x1 celdas contra un muro norte
+    perks: { revive: [15, -5, 17, -4], jugger: [-14, -17, -12, -16], speed: [14, 6, 16, 7], tap: [-33, -12, -31, -11], stamin: [28, -21, 30, -20], mule: [-16, 6, -14, 7], phd: [-12, -34, -10, -33], dead: [12, -40, 14, -39], cherry: [43, -42, 45, -41] },
+    pap: [36, -42, 39, -40],
+    boxSpots: [
+      { zone: 'A', r: [-5, -5, -3, -4], rot: 0 }, { zone: 'B', r: [-22, -11, -21, -9], rot: Math.PI / 2 }, { zone: 'C', r: [10, 14, 12, 15], rot: 0 },
+      { zone: 'I', r: [-22, 19, -20, 20], rot: 0 }, { zone: 'E', r: [23, -40, 25, -39], rot: 0 }, { zone: 'F', r: [32, -42, 34, -41], rot: 0 }, { zone: 'G', r: [42, -4, 43, -2], rot: -Math.PI / 2 },
+    ],
+    decor: decorPueblo,
+  },
+  sanatorio: {
+    id: 'sanatorio', name: 'Sanatorio Santa Lucía', desc: 'Noche, niebla y lluvia: cementerio, capilla, morgue, quirófano, celdas y crematorio.', env: ENV_NIGHT,
+    bounds: [-40, -38, 42, 26], start: [0, 2], facades: [0x3a3640, 0x2f3238, 0x403a36, 0x34302e, 0x2c2a30],
+    zones: {
+      A: { name: 'Cementerio', ext: 1, floor: 'grave', rects: [[-20, -6, 20, 10]] },
+      B: { name: 'Capilla', floor: 'stone', wall: 0x3d3438, rects: [[-22, -22, -6, -7]] },
+      C: { name: 'Morgue', floor: 'morgue', wall: 0x5f6662, rects: [[6, -22, 22, -7]] },
+      F: { name: 'Quirófano', floor: 'surgery', wall: 0x3f5248, rects: [[-38, -6, -21, 10]] },
+      D: { name: 'Patio', ext: 1, floor: 'mud', rects: [[21, -6, 40, 10]] },
+      E: { name: 'Pabellón', floor: 'ward', wall: 0x4e473d, rects: [[12, 11, 40, 24]] },
+      G: { name: 'Crematorio', floor: 'ash', wall: 0x2a2628, rects: [[-14, -36, 14, -23]] },
+    },
+    doors: [
+      { a: 'A', b: 'B', r: [-16, -7, -12, -6], price: 750, kind: 'wood' },
+      { a: 'A', b: 'C', r: [10, -7, 14, -6], price: 1000, kind: 'wood' },
+      { a: 'A', b: 'F', r: [-21, 0, -20, 4], price: 1000, kind: 'wood' },
+      { a: 'A', b: 'D', r: [20, 1, 21, 5], price: 1250, kind: 'debris' },
+      { a: 'A', b: 'E', r: [14, 10, 18, 11], price: 1500, kind: 'wood' },
+      { a: 'D', b: 'E', r: [30, 10, 34, 11], price: 1500, kind: 'debris' },
+      { a: 'B', b: 'G', r: [-12, -23, -8, -22], price: 2000, kind: 'wood' },
+      { a: 'C', b: 'G', r: [8, -23, 12, -22], price: 2000, kind: 'wood' },
+    ],
+    wallBuys: [{ id: 'uzi', price: 500, x: -4, z: -6, n: [0, 1] }, { id: 'escopeta', price: 900, x: -38, z: 2, n: [1, 0] }, { id: 'lanzallamas', price: 1500, x: 12, z: 18, n: [1, 0] }],
+    perks: { revive: [6, -6, 8, -5], jugger: [-21, -22, -19, -21], speed: [17, -22, 19, -21], tap: [-35, -6, -33, -5], stamin: [25, -6, 27, -5], mule: [36, 11, 38, 12], phd: [35, -6, 37, -5], dead: [20, 11, 22, 12], cherry: [-12, -36, -10, -35] },
+    pap: [-2, -36, 1, -34],
+    boxSpots: [
+      { zone: 'A', r: [-10, 8, -8, 9], rot: 0 }, { zone: 'B', r: [-22, -12, -21, -10], rot: Math.PI / 2 }, { zone: 'C', r: [17, -12, 19, -11], rot: 0 },
+      { zone: 'D', r: [36, 4, 38, 5], rot: 0 }, { zone: 'E', r: [26, 22, 28, 23], rot: 0 }, { zone: 'F', r: [-36, 6, -34, 7], rot: 0 }, { zone: 'G', r: [8, -36, 10, -35], rot: 0 },
+    ],
+    decor: decorSanatorio,
+  },
+};
+// copia de trabajo de zonas y puertas para cada mapa
+for (const M of Object.values(MAPS)) { M.ZONES = M.zones; M.DOORS = M.doors; }
+
+function decorPueblo() {
+  // A · calle mayor
+  prop([-19, -3, -15, -1], car(0xd9483b));
+  prop([12, 1, 16, 3], car(0x3f88c5));
+  prop([-8, 1, -4, 3], (() => { const g = car(0xf2c12e); put(part(.6, .25, .3, 0x1d1a17), -.2, 1.98, 0, g); return g; })());
+  prop([20, -5, 21, -4], grp([part(.7, 1, .7, 0x3f6b4a), 0, .5, 0]));
+  prop([-23, 4, -22, 5], grp([part(.7, 1, .7, 0x3f6b4a), 0, .5, 0]));
+  for (const [x, z] of [[-21, -5], [7, -5], [-14, 4], [19, 4]]) lamp(x, z);
+  put(part(.06, .8, .25, bmat(0x3fbf5a)), 15, 1.6, 5.5); put(part(.06, .25, .8, bmat(0x3fbf5a)), 15, 1.6, 5.5);
+  // B · bar
+  prop([-9, -16, -7, -11], grp([part(2, 1.1, 5, 0x5a3424), 0, .55, 0], [part(2.1, .1, 5.1, 0xa87a4a), 0, 1.15, 0]));
+  prop([-18, -13, -15, -11], grp([part(3, .75, 2, 0x5a3424), 0, .38, 0], [part(2.7, .08, 1.7, 0x2f7a4a), 0, .79, 0]));
+  for (const [x, z] of [[-13, -15], [-20, -9]]) prop([x, z, x + 2, z + 2], grp([part(1.6, .08, 1.6, 0xa87a4a), 0, .78, 0], [part(.2, .75, .2, 0x3a2414), 0, .38, 0]));
+  prop([-22, -16, -21, -15], grp([part(.9, 1.6, .7, 0x6a2c8a), 0, .8, 0], [part(.7, .5, .05, bmat(0xff6bd6)), 0, 1.1, .36]));
+  // C · farmacia
+  shelf([4, 9, 8, 10]); shelf([14, 9, 18, 10]); shelf([4, 12, 8, 13]); shelf([14, 12, 18, 13]);
+  // H · gasolinera
+  for (const z of [-7, 2]) {
+    const g = grp([part(1.6, .2, 5, 0x9a968e), 0, .1, 0]);
+    for (const pz of [-1.3, 1.3]) { put(part(.7, 1.5, .5, 0xd8392b), 0, .95, pz, g); put(part(.72, .3, .52, 0xf2efe6), 0, 1.85, pz, g); put(part(.05, .3, .3, bmat(0x9fe0ff)), .37, 1.3, pz, g); }
+    prop([-38, z, -36, z + 5], g);
+  }
+  prop([-45, -11, -40, -6], grp([part(5, 2.2, 5, 0xece4d4), 0, 1.1, 0], [part(5.1, .35, 5.1, 0xd8392b), 0, 2.3, 0], [part(3, .9, .05, bmat(0x9fc6d8)), 0, 1.3, 2.51]));
+  prop([-32, 8, -28, 10], car(0x6dbf67));
+  barrel(-44, 10); barrel(-43, 11); barrel(-27, -11);
+  // I · comisaría
+  for (const [x, z] of [[-20, 10], [-14, 10], [-20, 15], [-14, 15]]) prop([x, z, x + 2, z + 1], grp([part(2, .8, 1, 0x7a5634), 0, .4, 0], [part(.6, .45, .1, 0x1d1a17), 0, 1.05, -.2], [part(.5, .35, .02, bmat(0x7fc3ff)), 0, 1.05, -.14]));
+  prop([-9, 6, -5, 7], grp([part(4, 2, .9, 0x7a8a99), 0, 1, 0]));
+  prop([-9, 15, -5, 16], (() => { const g = new THREE.Group(); for (let i = 0; i < 9; i++) put(part(.08, 1.8, .08, 0x2a2a2e), -1.9 + i * .47, .9, 0, g); return g; })());
+  // D · callejón
+  prop([-8, -34, -6, -33], grp([part(2, 1.2, 1, 0x2f5a3a), 0, .6, 0], [part(2.05, .1, 1.05, 0x24402c), 0, 1.25, 0]));
+  barrel(-20, -26, true); barrel(2, -31, true); crate(-17, -33); crate(-1, -34);
+  // E · plaza
+  {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.5, .6, 24), smat(0xa89c86));
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, .05, 24), bmat(0x5fa8d8));
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(.3, .4, 1.6, 10), smat(0xa89c86));
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(.9, .5, .3, 16), smat(0xa89c86));
+    base.castShadow = col.castShadow = bowl.castShadow = true;
+    prop([16, -35, 21, -30], grp([base, 0, .3, 0], [water, 0, .58, 0], [col, 0, 1.1, 0], [bowl, 0, 1.9, 0]));
+  }
+  for (const [x, z] of [[9, -38], [27, -38], [9, -27], [27, -27]]) tree(x, z);
+  bench([12, -30, 14, -29]); bench([23, -36, 25, -35]);
+  // F · iglesia
+  for (const z of [-38, -35, -32, -29, -26]) for (const [x0, x1] of [[33, 37], [39, 44]]) prop([x0, z, x1, z + 1], grp([part(x1 - x0 - .1, .45, .7, 0x6b4423), 0, .45, 0], [part(x1 - x0 - .1, .5, .1, 0x5a3a1e), 0, .85, .35]));
+  for (const [x, c] of [[33, 0xd8392b], [37.5, 0x3f88c5], [42, 0xffc53d]]) put(part(1.2, 1, .05, bmat(c)), x, 1.2, -41.97);
+  // G · parque
+  {
+    const pond = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, .25, 24), bmat(0x4f8fc0)), rim = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.3, .35, 24), smat(0x8a8072));
+    prop([34, 2, 40, 8], grp([rim, 0, .17, 0], [pond, 0, .24, 0]));
+  }
+  for (const [x, z] of [[28, -16], [42, -12], [30, 10], [43, 15], [27, 14], [40, -7], [31, -6], [44, -19]]) tree(x, z);
+  bench([30, -11, 32, -10]); bench([28, 4, 30, 5]); lamp(33, -2); lamp(41, 11);
+  backdrop([0x9c6b5a, 0x6d7f8f, 0x8a7a9c, 0xb08d5b, 0x5f7a6a]);
+}
+
+function decorSanatorio() {
+  const keepClear = [];   // celdas que no se pueden tapar (pasos de puertas y máquinas)
+  for (const d of DOORS) keepClear.push([d.r[0] - 2, d.r[1] - 2, d.r[2] + 2, d.r[3] + 2]);
+  const clear = (x, z) => !keepClear.some(r => x >= r[0] && x < r[2] && z >= r[1] && z < r[3]) && cellAt(cellX(x), cellZ(z)) === 1;
+  // A · cementerio: hileras de tumbas, mausoleo, árboles secos, farolas que fallan
+  prop([-18, 6, -13, 10], grp([part(5, 2.1, 4, 0x55545a), 0, 1.05, 0], [part(5.4, .35, 4.4, 0x3e3d42), 0, 2.25, 0], [part(1.6, 1.5, .05, 0x0a0a0c), 0, .75, 2.01], [part(.18, .9, .18, 0x6a6a70), -1.8, 2.8, 1.6], [part(.18, .9, .18, 0x6a6a70), 1.8, 2.8, 1.6]));
+  for (const z of [-3, 1, 5]) for (let x = -18; x <= 17; x += 3) { const gx = x + (Math.random() < .5 ? 0 : 1); if (Math.abs(gx) > 2 && clear(gx, z)) grave(gx, z); }
+  for (const [x, z] of [[-19, -5], [18, -5], [-20, 9], [5, 8], [-6, 8]]) if (clear(x, z)) deadTree(x, z);
+  lamp(-6, -1, 0xffb060); lamp(7, 3, 0xffb060);
+  for (const [x, z] of [[-11, 3], [12, -1], [4, 6], [-3, -5]]) bonesPile(x + .5, z + .5);
+  candles(-14, -3.5, 6); candles(9, 1.6, 5);
+  mist([[-20, -6, 20, 10]], 14);
+  // B · capilla: bancos, altar con velas, ataúdes abiertos, vidrieras rotas
+  for (const z of [-19, -16, -13]) { prop([-20, z, -16, z + 1], grp([part(3.9, .45, .7, 0x3a2414), 0, .45, 0], [part(3.9, .5, .1, 0x2e1c10), 0, .85, .35])); prop([-13, z, -9, z + 1], grp([part(3.9, .45, .7, 0x3a2414), 0, .45, 0], [part(3.9, .5, .1, 0x2e1c10), 0, .85, .35])); }
+  { const g = grp([part(4, 1, 1, 0x2a2224), 0, .5, 0], [part(4.1, .08, 1.1, 0x5a0f12), 0, 1.02, 0], [part(.14, 1.4, .14, bmat(0x8a7a3a)), 0, 1.7, -.3], [part(.8, .14, .14, bmat(0x8a7a3a)), 0, 2, -.3]); prop([-17, -22, -13, -21], g); candles(-15, -20.5, 10); }
+  for (const x of [-18.5, -11.5]) put(grp([part(.12, 1.8, .12, 0x2a2224), 0, .9, 0], [part(.6, .08, .08, 0x2a2224), 0, 1.8, 0], [part(.08, .12, .08, bmat(0xffc04a)), -.25, 1.9, 0], [part(.08, .12, .08, bmat(0xffc04a)), .25, 1.9, 0]), x, 0, -20.5);
+  flicker(put(new THREE.PointLight(0xff8a3a, 12, 11, 1.4), -15, 2.2, -19), .3);
+  coffin([-9, -21, -7, -20], true); coffin([-21, -16, -20, -14], true); coffin([-8, -10, -7, -8], false);
+  for (const [x, c] of [[-19, 0x6a1020], [-14.5, 0x3a1a5a], [-10, 0x6a1020]]) put(part(1.4, 1.1, .05, bmat(c)), x, 1.25, -21.97);
+  cobweb(-21.5, 1.6, -21.5, .8); cobweb(-7.5, 1.6, -21.5, -.8); cobweb(-21.5, 1.6, -8, 2.2);
+  // C · morgue: mesas de autopsia con cuerpos tapados, cámaras frigoríficas, bolsas
+  for (const [x, z] of [[7, -18], [12, -18], [7, -11], [13, -11]]) gurney([x, z, x + 2, z + 1]);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) put(part(.9, .7, .05, 0x9aa2a6), 13.6 + i, .9 + j * .85, -21.97);
+  bodyBag(9.5, -14.5, .2); bodyBag(16, -16, 1.4); bodyBag(19, -9, .8);
+  flicker(put(new THREE.PointLight(0xbfe8ff, 12, 12, 1.4), 13, 2.6, -15), 2.5);
+  put(part(1.6, .08, .5, bmat(0xd8f0ff)), 13, 2.9, -15);
+  cobweb(21.5, 1.6, -21.5, -.8);
+  // F · quirófano: mesa de operaciones, lámpara, goteros, carros, cortinas
+  prop([-31, 0, -28, 2], grp([part(2.6, .9, 1.2, 0x8a9096), 0, .45, 0], [part(2.4, .3, .9, 0xe8e6dc), 0, 1.05, 0], [part(.38, .3, .36, 0xe8e6dc), -1, 1.25, 0], [part(1.2, .02, .7, 0x7a0f12), .2, 1.21, 0]));
+  put(grp([part(1.4, .12, 1.4, 0xdfe6ea), 0, 0, 0], [part(1.1, .03, 1.1, bmat(0xf2fbff)), 0, -.08, 0], [part(.08, 1, .08, 0x6a7076), 0, .55, 0]), -29.5, 2.9, 1);
+  flicker(put(new THREE.PointLight(0xe8fff4, 16, 10, 1.3), -29.5, 2.6, 1), 1.5);
+  for (const [x, z] of [[-33, 3], [-26, -2]]) prop([x, z, x + 1, z + 1], grp([part(.06, 1.9, .06, 0x8a9096), 0, .95, 0], [part(.3, .4, .1, 0x9fe0ff), .15, 1.7, 0]));
+  for (const [x, z] of [[-24, -4], [-37, -2]]) prop([x, z, x + 1, z + 1], grp([part(.8, .8, .5, 0x8a9096), 0, .4, 0], [part(.7, .05, .45, 0xb8bec4), 0, .82, 0]));
+  prop([-25, 4, -24, 8], grp([part(.05, 2, 3.6, 0x6f8a7a), 0, 1.1, 0]));
+  wheelchair(-35, -4); bodyBag(-36, 3, .3); gurney([-28, 6, -26, 7]);
+  // D · patio: fuente seca, sillas de ruedas abandonadas, columpio, árboles muertos
+  { const base = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.1, .6, 18), smat(0x45424a)), col = new THREE.Mesh(new THREE.CylinderGeometry(.25, .35, 1.8, 8), smat(0x45424a)); base.castShadow = col.castShadow = true; prop([28, 0, 32, 4], grp([base, 0, .3, 0], [col, 0, 1.2, 0], [part(.6, .6, .6, 0x3a383e), 0, 2.3, 0])); }
+  wheelchair(25, 5); wheelchair(34, 1); wheelchair(38, -2);
+  prop([33, 7, 37, 8], grp([part(.12, 2.4, .12, 0x2a2a2e), -1.9, 1.2, 0], [part(.12, 2.4, .12, 0x2a2a2e), 1.9, 1.2, 0], [part(4, .12, .12, 0x2a2a2e), 0, 2.4, 0], [part(.6, .08, .3, 0x3a2414), -.6, .6, 0], [part(.02, 1.8, .02, 0x55575c), -.85, 1.5, 0], [part(.02, 1.8, .02, 0x55575c), -.35, 1.5, 0]));
+  for (const [x, z] of [[23, 7], [39, 7], [22, -5], [31, -5]]) if (clear(x, z)) deadTree(x, z);
+  lamp(27, 6, 0xb8d8ff);
+  mist([[21, -6, 40, 10]], 7);
+  // E · pabellón: celdas con camas y camisas de fuerza, camillas, sillas
+  for (const x of [18, 24, 30, 36]) prop([x, 19, x + 1, 24], grp([part(1, 2, 5, 0x4e473d), 0, 1, 0]));
+  for (let x = 12.5; x < 40; x += .5) if (![18, 24, 30, 36].some(v => x >= v && x < v + 1)) put(part(.05, 1.9, .05, 0x2a2a2e), x, .95, 19.1);
+  for (const x of [14, 20, 32]) prop([x, 21, x + 2, 23], grp([part(1.8, .5, 1, 0xdfe6e8), 0, .45, 0], [part(.6, .25, .8, 0xf2efe6), -.2, .8, 0], [part(.08, .3, 1, 0xc8b89a), .5, .7, 0]));
+  gurney([15, 13, 17, 14], true); gurney([28, 15, 30, 16], false); wheelchair(34, 14); wheelchair(22, 16);
+  flicker(put(new THREE.PointLight(0xd8f0c0, 14, 16, 1.2), 26, 2.6, 15), 3);
+  for (const x of [16, 26, 38]) put(part(1.4, .06, .3, bmat(0xe8ffe0)), x, 2.9, 15);
+  bonesPile(37.5, 21.5);
+  // G · crematorio: hornos encendidos, ataúdes apilados, cadenas, cenizas
+  oven([-8, -36, -5, -34]); oven([3, -36, 6, -34]);
+  coffin([-13, -31, -12, -29], false); coffin([12, -31, 13, -29], false); coffin([-13, -27, -11, -26], true);
+  for (const [x, z] of [[-6, -29], [-2, -27], [3, -29], [7, -27], [0, -31]]) chain(x, z, rand(1.4, 2.4));
+  gurney([5, -27, 7, -26], true);
+  for (const [x, z] of [[-9, -25], [9, -32], [-4, -32]]) bonesPile(x, z);
+  candles(-1, -24.5, 8);
+  cobweb(-13.5, 1.6, -35.5, .8); cobweb(13.5, 1.6, -35.5, -.8);
+  // fuera de los muros: árboles muertos y siluetas del sanatorio entre la niebla
+  for (let i = 0; i < 40; i++) {
+    const side = i % 3, x = side === 0 ? rand(MX0 - 12, MX1 + 12) : side === 1 ? rand(MX0 - 12, MX0 - 2) : rand(MX1 + 2, MX1 + 12);
+    const z = side === 0 ? rand(MZ0 - 12, MZ0 - 2) : rand(MZ0, MZ1);
+    const t = new THREE.Mesh(deadTrunk, smat(0x15120f)); t.scale.setScalar(rand(1.2, 2.2)); put(t, x, 1.3 * t.scale.y, z);
+  }
+  backdrop([0x24222a, 0x1e2026, 0x2a2624]);
+}
+
+// construye un mapa una vez (dentro de su propio grupo) y lo deja listo para mostrar
+function useMap(M) {
+  MAP = M; ZONES = M.ZONES; ZONE_LIST = Object.values(ZONES); DOORS = M.DOORS; BOX_SPOTS = M.boxSpots; START = M.start; FACADES = M.facades;
+  [MX0, MZ0, MX1, MZ1] = M.bounds; GW = MX1 - MX0; GH = MZ1 - MZ0; NIGHT = !!M.env.night;
+  grid = M.grid ??= new Uint8Array(GW * GH); zoneGrid = M.zoneGrid ??= new Uint8Array(GW * GH);
+  interact = M.interact ??= [];
+  M.flickers ??= []; M.mists ??= [];
+}
+function buildMap(M) {
+  M.group = new THREE.Group(); ROOT = M.group;
+  ZONE_LIST.forEach((Z, i) => Z.rects.forEach(r => fill(r, 1, i + 1)));
+  for (const d of DOORS) fill(d.r, 3, 0);
+  const f = new THREE.Mesh(new THREE.PlaneGeometry(GW, GH), new THREE.MeshLambertMaterial({ map: groundTexture() }));
+  f.rotation.x = -Math.PI / 2; f.receiveShadow = true; put(f, (MX0 + MX1) / 2, 0, (MZ0 + MZ1) / 2);
+  const under = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), smat(M.env.under)); under.rotation.x = -Math.PI / 2; put(under, 0, -.02, 0);
+  M.decor();
+  buildWalls();
+  // pizarras de pared: pocas armas. Si ya la tienes, vende munición (a mitad de precio; mejorada, al doble)
+  for (const b of M.wallBuys) {
+    const [nx, nz] = b.n, g = new THREE.Group(), w = W[b.id];
+    put(part(2.8, 1.5, .12, 0x2b3a2e), 0, 1.35, 0, g);
+    put(part(2.95, .12, .16, 0x8a6a3a), 0, .62, 0, g);
+    const m = put(gunModel(w), -(w.model.len + (w.model.barrel ?? .2)) * .75, 1.4, .15, g); m.scale.setScalar(1.5); m.rotation.y = Math.PI / 2;
+    g.rotation.y = facing(nx, nz); put(g, b.x + nx * .07, 0, b.z + nz * .07);
+    label(w.name, `$${b.price} · munición $${b.price / 2}`).sprite.position.set(b.x + nx * .5, 3.1, b.z + nz * .5);
+    interact.push({ x: b.x + nx * 1.4, z: b.z + nz * 1.4, r: 1.9,
+      act: E => owns(E, b.id) ? giveAmmo(E, b.id) : giveWeapon(E, b.id),
+      info: E => !owns(E, b.id) ? { text: `Comprar ${w.name}`, price: b.price, ok: true }
+        : { text: `Munición de ${w.name}${E.slots.includes(b.id + '_pap') ? ' mejorada' : ''}`, price: E.slots.includes(b.id + '_pap') ? b.price * 2 : b.price / 2, ok: true } });
+  }
+  // máquinas de bebidas
+  M.perkLabels = {};
+  for (const [k, r] of Object.entries(M.perks)) {
+    const p = PERKS[k], glow = bmat(p.glow), g = grp(
+      [part(1.5, 2.6, .95, p.col), 0, 1.3, 0], [part(1.1, 1.1, .06, glow), 0, 1.65, .49], [part(1.6, .3, 1, glow), 0, 2.75, 0],
+      [part(.5, .15, .08, 0x1d1a17), 0, .55, .5], [part(1.2, .25, .07, bmat(0xffffff)), 0, 2.3, .49]);
+    const o = prop(r, g);
+    const lab = M.perkLabels[k] = label(p.name, ''); lab.sprite.position.set(o.position.x, 3.65, o.position.z + .2);
+    interact.push({ x: o.position.x, z: o.position.z + 1.4, r: 1.9,
+      act: E => {
+        E.perks.push(k);
+        if (k === 'mule') E.slots.push(null);
+        recalcStats(E);
+        tell(E, p.name.toUpperCase(), p.desc, 'drink');
+      },
+      info: E => E.perks.includes(k) ? { text: `Ya tienes ${p.name}`, price: 0, ok: false }
+        : k === 'revive' && ents.size === 1 && E.qrUses >= QR_SOLO_USES ? { text: 'Quick Revive agotado', price: 0, ok: false }
+        : E.perks.length >= MAX_PERKS ? { text: `Máximo ${MAX_PERKS} bebidas`, price: 0, ok: false }
+        : { text: `${p.name}: ${p.desc}`, price: p.price(), ok: true } });
+  }
+  // puertas
+  for (const d of DOORS) {
+    const vertical = d.r[2] - d.r[0] === 1, cx = (d.r[0] + d.r[2]) / 2, cz = (d.r[1] + d.r[3]) / 2;
+    d.x = cx; d.z = cz;
+    d.g = put(doorMesh(d.kind), cx, 0, cz); if (vertical) d.g.rotation.y = Math.PI / 2;
+    d.lab = label(ZONES[d.b].name, '$' + d.price); d.lab.sprite.position.set(cx, 3.3, cz);
+    interact.push({ x: cx, z: cz, r: 2.9, act: () => openDoor(d),
+      info: () => d.open ? null : { text: `${d.kind === 'wood' ? 'Abrir' : 'Despejar'}: ${doorName(d)}`, price: d.price, ok: true } });
+  }
+  interact.push(boxInteract, papInteract);
+  ROOT = scene; M.built = true;
+}
+// cambia de mapa (en el menú o al empezar una partida online)
+function setMap(id) {
+  const M = MAPS[id] ?? MAPS.pueblo;
+  if (MAP === M) return;
+  if (MAP) scene.remove(MAP.group);
+  useMap(M);
+  if (!M.built) buildMap(M);
+  scene.add(M.group);
+  flow = new Int16Array(GW * GH); bfsQ = new Int32Array(GW * GH); flowDirty = true;
+  mbox.spot = -1; placeBox(0); placePap(M.pap);
+  const e = M.env;
+  scene.background.setHex(e.sky); scene.fog.color.setHex(e.sky); [scene.fog.near, scene.fog.far] = e.fog;
+  hemi.color.setHex(e.hemi[0]); hemi.groundColor.setHex(e.hemi[1]); hemi.intensity = e.hemi[2];
+  sun.color.setHex(e.sun[0]); sun.intensity = e.sun[1];
+  rain.visible = NIGHT;
+}
+// ambiente de noche: linterna, luces que fallan, niebla que se mueve, lluvia y relámpagos
+const rain = (() => {
+  const N = 700, pos = new Float32Array(N * 6);
+  for (let i = 0; i < N; i++) { const x = rand(-22, 22), y = rand(0, 18), z = rand(-22, 22); pos.set([x, y, z, x + .08, y + .7, z], i * 6); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x8a9ab8, transparent: true, opacity: .35, fog: false }));
+  l.frustumCulled = false; l.visible = false; scene.add(l);
+  return l;
+})();
+let boltT = 9, boltFx = 0, nightAmbT = 6;
+function updateEnv(dt) {
+  if (!NIGHT) { torch.intensity = torchFill.intensity = 0; return; }
+  // linterna
+  const p = me.pos, on = !me.dead;
+  torch.intensity = on && state !== 'menu' && state !== 'lobby' ? 90 : 0; torchFill.intensity = on ? 10 : 0;
+  torch.position.set(p.x - me.aim.x * .3, 1.6, p.z - me.aim.z * .3); torch.target.position.set(p.x + me.aim.x * 7, 0, p.z + me.aim.z * 7);
+  torchFill.position.set(p.x, 2.2, p.z);
+  for (const f of MAP.flickers) {
+    if (f.off > 0) { f.off -= dt; f.light.intensity = f.base * .08; continue; }
+    if (Math.random() < f.p * dt) f.off = rand(.05, .35);
+    f.light.intensity = f.base * rand(.85, 1.1);
+  }
+  for (const m of MAP.mists) { m.s.position.x += m.vx * dt; if (m.s.position.x < m.r[0] - 3 || m.s.position.x > m.r[2] + 3) m.vx *= -1; }
+  // lluvia alrededor de la cámara
+  rain.position.set(camFocus.x, 0, camFocus.z);
+  const a = rain.geometry.attributes.position, arr = a.array;
+  for (let i = 0; i < arr.length; i += 6) { arr[i + 1] -= 22 * dt; arr[i + 4] -= 22 * dt; if (arr[i + 1] < 0) { arr[i + 1] += 18; arr[i + 4] += 18; } }
+  a.needsUpdate = true;
+  // relámpagos y truenos
+  if ((boltT -= dt) <= 0) { boltT = rand(9, 22); boltFx = .35; sfx.thunder(rand(.3, 1.4)); }
+  if (boltFx > 0) {
+    boltFx -= dt; const k = Math.random() < .5 ? 1 : .3;
+    hemi.intensity = MAP.env.hemi[2] + 3 * k; scene.background.setHex(k > .5 ? 0x3a4466 : 0x161a26);
+    if (boltFx <= 0) { hemi.intensity = MAP.env.hemi[2]; scene.background.setHex(MAP.env.sky); }
+  }
+  // crujidos, campanas y susurros lejanos
+  if (state === 'play' && (nightAmbT -= dt) <= 0) { nightAmbT = rand(5, 12); [sfx.creak, sfx.bell, sfx.distant][Math.random() * 3 | 0](); }
+}
 
 // ---------- armas ----------
 // model: len cuerpo, col, barrel cañón, thick grosor, mag cargador, stock culata, scope mira, tank depósito, bow arco, glow franja brillante
@@ -658,7 +1005,7 @@ const CHARS = [
   { id: 'rockero', name: 'Rockero', price: 2000, desc: 'Dispara un 20% más rápido y corre más', look: { shirt: 0x1d1a17, pants: 0x2a2c48, hair: 0xd8392b, skin: 0xe8b48a, acc: ['mohawk'] }, mod: E => { E.rateMul = .8; E.speedMul = 1.1; } },
 ];
 const SAVE_KEY = 'minizombis.save';
-const save = { skulls: 0, owned: ['mike'], sel: 'mike' };
+const save = { skulls: 0, owned: ['mike'], sel: 'mike', map: 'pueblo' };
 try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); } catch {}
 if (!save.owned.includes(save.sel)) save.sel = 'mike';
 const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} };
@@ -667,15 +1014,15 @@ const charOf = id => CHARS.find(c => c.id === id) ?? CHARS[0];
 // ---------- bebidas (como las Perk-a-Cola de CoD Zombies): una de cada, máximo 4; al caer se pierden ----------
 // r = celdas de la máquina (contra un muro norte, mirando al sur)
 const PERKS = {
-  revive: { name: 'Quick Revive', ab: 'QR', desc: 'Solo: te levantas tú mismo (3 veces). Online: reanimas el doble de rápido', col: 0x2f8ad8, glow: 0x9fe0ff, price: () => ents.size > 1 ? 1500 : 500, r: [15, -5, 17, -4] },
+  revive: { name: 'Quick Revive', ab: 'QR', desc: 'Solo: te levantas tú mismo (3 veces). Online: reanimas el doble de rápido', col: 0x2f8ad8, glow: 0x9fe0ff, price: () => ents.size > 1 ? 1500 : 500 },
   jugger: { name: 'Juggernog', ab: 'JN', desc: 'Aguantas dos veces y media más golpes', col: 0xb3201c, glow: 0xff6a5a, price: () => 2500, r: [-14, -17, -12, -16], apply: E => E.maxHp *= 2.5 },
   speed: { name: 'Speed Cola', ab: 'SC', desc: 'Recargas el doble de rápido', col: 0x2f8a3a, glow: 0x7dff6a, price: () => 3000, r: [14, 6, 16, 7], apply: E => E.reloadMul *= .5 },
   tap: { name: 'Double Tap', ab: 'DT', desc: 'Disparas un 33% más rápido y haces más daño', col: 0xc9741c, glow: 0xffc53d, price: () => 2000, r: [-33, -12, -31, -11], apply: E => { E.rateMul *= .75; E.dmgMul *= 1.5; } },
   stamin: { name: 'Stamin-Up', ab: 'SU', desc: 'Corres un 25% más', col: 0xd89a1c, glow: 0xffe08a, price: () => 2000, r: [28, -21, 30, -20], apply: E => E.speedMul *= 1.25 },
-  mule: { name: 'Mule Kick', ab: 'MK', desc: 'Puedes llevar un tercer arma', col: 0x4a6b2a, glow: 0xb8e06a, price: () => 4000, r: [-16, 6, -14, 7] },
-  phd: { name: 'PhD Flopper', ab: 'PhD', desc: 'Las explosiones no te hacen daño', col: 0x6a2c8a, glow: 0xd08bff, price: () => 2000, r: [-12, -34, -10, -33] },
-  dead: { name: 'Deadshot Daiquiri', ab: 'DS', desc: 'Puntería asistida y disparos más precisos', col: 0x4a4d52, glow: 0xdfe6e8, price: () => 1500, r: [12, -40, 14, -39] },
-  cherry: { name: 'Electric Cherry', ab: 'EC', desc: 'Al recargar sueltas una descarga eléctrica', col: 0x2a3fa8, glow: 0x6fd0ff, price: () => 2000, r: [43, -42, 45, -41] },
+  mule: { name: 'Mule Kick', ab: 'MK', desc: 'Puedes llevar un tercer arma', col: 0x4a6b2a, glow: 0xb8e06a, price: () => 4000 },
+  phd: { name: 'PhD Flopper', ab: 'PhD', desc: 'Las explosiones no te hacen daño', col: 0x6a2c8a, glow: 0xd08bff, price: () => 2000 },
+  dead: { name: 'Deadshot Daiquiri', ab: 'DS', desc: 'Puntería asistida y disparos más precisos', col: 0x4a4d52, glow: 0xdfe6e8, price: () => 1500 },
+  cherry: { name: 'Electric Cherry', ab: 'EC', desc: 'Al recargar sueltas una descarga eléctrica', col: 0x2a3fa8, glow: 0x6fd0ff, price: () => 2000 },
 };
 const MAX_PERKS = 4, QR_SOLO_USES = 3;
 
@@ -779,43 +1126,11 @@ function useAmmo(E) {
 
 // ---------- compras en el mapa ----------
 // cada objeto: info(E) -> {text, price, ok} | null ; act(E). Online solo el anfitrión ejecuta act().
-const interact = [];
 const facing = (nx, nz) => Math.atan2(nx, nz);
 const owns = (E, id) => E.slots.includes(id) || E.slots.includes(id + '_pap');
 // pizarras de pared: pocas armas. Si ya la tienes, vende munición (a mitad de precio; mejorada, al doble)
 function giveAmmo(E, id) { if (E === me) refillAmmo(id); else sendTo(E, { t: 'ammo', id }); tell(E, 'MUNICIÓN', W[id].name); }
-for (const b of [{ id: 'uzi', price: 500, x: 3, z: -5, n: [0, 1] }, { id: 'escopeta', price: 900, x: -46, z: 4, n: [1, 0] }, { id: 'lanzallamas', price: 1500, x: -24, z: 18, n: [1, 0] }]) {
-  const [nx, nz] = b.n, g = new THREE.Group(), w = W[b.id];
-  put(part(2.8, 1.5, .12, 0x2b3a2e), 0, 1.35, 0, g);
-  put(part(2.95, .12, .16, 0x8a6a3a), 0, .62, 0, g);
-  const m = put(gunModel(w), -(w.model.len + (w.model.barrel ?? .2)) * .75, 1.4, .15, g); m.scale.setScalar(1.5); m.rotation.y = Math.PI / 2;
-  g.rotation.y = facing(nx, nz); put(g, b.x + nx * .07, 0, b.z + nz * .07);
-  label(w.name, `$${b.price} · munición $${b.price / 2}`).sprite.position.set(b.x + nx * .5, 3.1, b.z + nz * .5);
-  interact.push({ x: b.x + nx * 1.4, z: b.z + nz * 1.4, r: 1.9,
-    act: E => owns(E, b.id) ? giveAmmo(E, b.id) : giveWeapon(E, b.id),
-    info: E => !owns(E, b.id) ? { text: `Comprar ${w.name}`, price: b.price, ok: true }
-      : { text: `Munición de ${w.name}${E.slots.includes(b.id + '_pap') ? ' mejorada' : ''}`, price: E.slots.includes(b.id + '_pap') ? b.price * 2 : b.price / 2, ok: true } });
-}
-// máquinas de bebidas
-for (const [k, p] of Object.entries(PERKS)) {
-  const glow = bmat(p.glow), g = grp(
-    [part(1.5, 2.6, .95, p.col), 0, 1.3, 0], [part(1.1, 1.1, .06, glow), 0, 1.65, .49], [part(1.6, .3, 1, glow), 0, 2.75, 0],
-    [part(.5, .15, .08, 0x1d1a17), 0, .55, .5], [part(1.2, .25, .07, bmat(0xffffff)), 0, 2.3, .49]);
-  const o = prop(p.r, g);
-  p.lab = label(p.name, ''); p.lab.sprite.position.set(o.position.x, 3.65, o.position.z + .2);
-  interact.push({ x: o.position.x, z: o.position.z + 1.4, r: 1.9,
-    act: E => {
-      E.perks.push(k);
-      if (k === 'mule') E.slots.push(null);
-      recalcStats(E);
-      tell(E, p.name.toUpperCase(), p.desc, 'drink');
-    },
-    info: E => E.perks.includes(k) ? { text: `Ya tienes ${p.name}`, price: 0, ok: false }
-      : k === 'revive' && ents.size === 1 && E.qrUses >= QR_SOLO_USES ? { text: 'Quick Revive agotado', price: 0, ok: false }
-      : E.perks.length >= MAX_PERKS ? { text: `Máximo ${MAX_PERKS} bebidas`, price: 0, ok: false }
-      : { text: `${p.name}: ${p.desc}`, price: p.price(), ok: true } });
-}
-const redrawPerkLabels = () => { for (const p of Object.values(PERKS)) p.lab.draw(p.name, '$' + p.price()); };
+const redrawPerkLabels = () => { for (const [k, lab] of Object.entries(MAP.perkLabels)) lab.draw(PERKS[k].name, '$' + PERKS[k].price()); };
 // puertas tapiadas y montones de escombros
 function doorMesh(kind) {
   const g = new THREE.Group();
@@ -834,14 +1149,6 @@ function doorMesh(kind) {
   return g;
 }
 const doorName = d => !ZONES[d.b].open ? ZONES[d.b].name : !ZONES[d.a].open ? ZONES[d.a].name : 'Atajo';
-for (const d of DOORS) {
-  const vertical = d.r[2] - d.r[0] === 1, cx = (d.r[0] + d.r[2]) / 2, cz = (d.r[1] + d.r[3]) / 2;
-  d.x = cx; d.z = cz;
-  d.g = put(doorMesh(d.kind), cx, 0, cz); if (vertical) d.g.rotation.y = Math.PI / 2;
-  d.lab = label(ZONES[d.b].name, '$' + d.price); d.lab.sprite.position.set(cx, 3.3, cz);
-  interact.push({ x: cx, z: cz, r: 2.9, act: () => openDoor(d),
-    info: () => d.open ? null : { text: `${d.kind === 'wood' ? 'Abrir' : 'Despejar'}: ${doorName(d)}`, price: d.price, ok: true } });
-}
 function resetDoors() {
   for (const Z of ZONE_LIST) Z.open = Z === ZONES.A;
   for (const d of DOORS) {
@@ -861,10 +1168,6 @@ function openDoor(d) {
   sfx.door(d.kind);
 }
 // caja misteriosa: solo aparece en zonas abiertas. r = celdas que ocupa. La oferta es de quien pagó.
-const BOX_SPOTS = [
-  { zone: 'A', r: [-5, -5, -3, -4], rot: 0 }, { zone: 'B', r: [-22, -11, -21, -9], rot: Math.PI / 2 }, { zone: 'C', r: [10, 14, 12, 15], rot: 0 },
-  { zone: 'I', r: [-22, 19, -20, 20], rot: 0 }, { zone: 'E', r: [23, -40, 25, -39], rot: 0 }, { zone: 'F', r: [32, -42, 34, -41], rot: 0 }, { zone: 'G', r: [42, -4, 43, -2], rot: -Math.PI / 2 },
-];
 const mbox = { g: new THREE.Group(), spot: -1, state: 'idle', t: 0, cyc: 0, pick: null, uses: 0, moveNext: false, owner: null, paid: 0 };
 put(part(2.2, .8, 1.1, 0x5a3a22), 0, .4, 0, mbox.g);
 for (const sx of [-.6, .6]) put(part(.35, .4, .04, bmat(0x6fd0ff)), sx, .42, .56, mbox.g);
@@ -898,7 +1201,6 @@ const boxInteract = { x: 0, z: 0, r: 2.4,
     mbox.moveNext = pw.fire <= 0 && mbox.uses >= 3 && Math.random() < .25 && BOX_SPOTS.some((s, i) => i !== mbox.spot && ZONES[s.zone].open);
     mbox.uses++; mbox.state = 'rolling'; mbox.t = 0; mbox.cyc = 0; mbox.owner = E.id; mbox.paid = boxPrice(E);
   } };
-interact.push(boxInteract);
 function placeBox(i) {
   if (mbox.spot >= 0) fill(BOX_SPOTS[mbox.spot].r, 1);
   const s = BOX_SPOTS[i], x = (s.r[0] + s.r[2]) / 2, z = (s.r[1] + s.r[3]) / 2;
@@ -944,13 +1246,20 @@ function updateBox(dt) {
 // ---------- Pack-a-Punch (fondo de la iglesia) ----------
 const pap = { state: 'idle', t: 0, id: null, chug: 0, owner: null };
 const papLight = new THREE.MeshBasicMaterial({ color: 0x3fe8ff });
-const papG = prop([36, -42, 39, -40], grp(
+const papG = put(grp(
   [part(2.8, 2.2, 1.7, 0x3a2350), 0, 1.1, 0], [part(2.9, .25, 1.8, papLight), 0, 2.3, 0],
   [part(2.2, .9, .08, bmat(0xb86bff)), 0, 1.5, .86], [part(1.4, .12, .6, 0x1d1a17), 0, .85, 1],
-  [part(.45, .45, .45, bmat(0xffc53d)), 0, 2.7, 0]));
+  [part(.45, .45, .45, bmat(0xffc53d)), 0, 2.7, 0]), 0, 0, 0);
 const rollers = [-1.15, 1.15].map(x => put(part(.3, .3, 1.75, 0x6b6b78), x, 1.85, 0, papG));
 const papDisp = put(new THREE.Group(), 0, 1.05, 1.1, papG);
-const papLab = label('Pack-a-Punch', '$' + PAP_PRICE); papLab.sprite.position.set(37.5, 3.7, -41);
+const papLab = label('Pack-a-Punch', '$' + PAP_PRICE);
+// cada mapa tiene la máquina en un sitio
+function placePap(r) {
+  fill(r, 2);
+  const x = (r[0] + r[2]) / 2, z = (r[1] + r[3]) / 2;
+  papG.position.set(x, 0, z); papLab.sprite.position.set(x, 3.7, z);
+  papInteract.x = x; papInteract.z = r[3] + 1.4;
+}
 const papPrice = E => Math.round(PAP_PRICE * E.discount);
 function showPapGun(id) {
   papDisp.clear();
@@ -965,7 +1274,7 @@ function setPapState(st) {
   else if (st === 'ready') { showPapGun(pap.id + '_pap'); sfx.papDone(); }
   else showPapGun(null);
 }
-interact.push({ x: 37.5, z: -38.6, r: 2.2,
+const papInteract = { x: 0, z: 0, r: 2.2,
   info: E => pap.state === 'working' ? null
     : pap.state === 'ready' ? (pap.owner === E.id ? { text: `Coger ${W[pap.id + '_pap'].name}`, price: 0, ok: true } : { text: `Es de ${nameOf(pap.owner)}`, price: 0, ok: false })
     : E.dm > 0 || !E.slots[E.cur] ? null
@@ -980,7 +1289,7 @@ interact.push({ x: 37.5, z: -38.6, r: 2.2,
     }
     // ponytail: te quedas el arma mientras se mejora; al recogerla se cambia por la mejorada
     pap.id = E.slots[E.cur]; pap.owner = E.id; setPapState('working');
-  } });
+  } };
 function updatePap(dt) {
   pap.t += dt;
   const working = pap.state === 'working';
@@ -1137,7 +1446,8 @@ function speak(text) {
 }
 
 // ---------- navegación: campo de flujo (BFS desde las celdas de los jugadores vivos) ----------
-const flow = new Int16Array(GW * GH), bfsQ = new Int32Array(GW * GH), spawnCells = [];
+let flow = new Int16Array(1), bfsQ = new Int32Array(1);
+const spawnCells = [];
 let flowKey = '', flowDirty = true, flowT = 0;
 const flowAt = (cx, cz) => cx < 0 || cz < 0 || cx >= GW || cz >= GH ? -1 : flow[gi(cx, cz)];
 const DIR4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], DIR8 = [...DIR4, [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -1441,6 +1751,9 @@ const sfx = {
   ouch: () => { const f = rand(185, 240); voice({ f0: f, f1: f * .7, dur: rand(.16, .26), vol: .38, form: AH, vib: 5, vibAmt: .02, attack: .008, breath: .4, bf: 1800 }); noise(.07, .18, { f: 600, f1: 150 }); },
   deathScream: () => { voice({ f0: 290, f1: 110, dur: 1.5, vol: .42, form: AH, vib: 6, vibAmt: .05, attack: .02, breath: .45, bf: 2000 }); },
   heart: () => { tone(62, 40, .12, .4, 'sine'); tone(58, 38, .12, .3, 'sine', .16); },
+  thunder: (delay = 0) => { noise(2.6, .55, { f: 380, f1: 40, delay, attack: .04 }); noise(1.2, .3, { f: 1400, f1: 120, delay }); tone(48, 30, 2, .3, 'sine', delay, .05); },
+  creak: () => voice({ f0: rand(120, 170), f1: rand(70, 100), dur: rand(.9, 1.5), vol: .05, form: [[900, 9], [1700, 10]], vib: 24, vibAmt: .18, attack: .12, lp: 2200 }),
+  bell: () => { for (const [f, d] of [[196, 0], [196, 1.6]]) { tone(f, f * .99, 2.6, .05, 'sine', d, .01); tone(f * 2.76, f * 2.7, 1.6, .02, 'sine', d, .01); } },
   join: () => { tone(660, 990, .12, .08, 'triangle'); tone(990, 1320, .15, .08, 'triangle', .12); },
   // gritos y gemidos lejanos para ambientar
   distant: (delay = 0) => {
@@ -1808,7 +2121,7 @@ function resetWorld() {
 }
 function enterPlay() {
   $('menu').hidden = $('dead').hidden = $('lobby').hidden = true; $('hud').hidden = false;
-  state = 'play'; showSticks(); setLoop('wind', .06);
+  state = 'play'; showSticks(); setLoop('wind', NIGHT ? .16 : .06);
   papLab.draw('Pack-a-Punch', '$' + papPrice(me)); redrawPerkLabels();
 }
 // anfitrión (o solo): empieza la partida para todos
@@ -1822,7 +2135,7 @@ function startGame() {
     const [ox, oz] = SPAWN_OFF[i]; E.pos.set(START[0] + ox, 0, START[1] + oz); E.tx = E.pos.x; E.tz = E.pos.z;
     E.model.g.rotation.set(0, 0, 0); syncGun(E); pos[E.id] = [E.pos.x, E.pos.z];
   });
-  if (NET?.host) for (const [id, c] of NET.conns) c.open && c.send({ t: 'start', you: id, ents: list.map(E => [E.id, E.name, E.charId]), pos });
+  if (NET?.host) for (const [id, c] of NET.conns) c.open && c.send({ t: 'start', map: MAP.id, you: id, ents: list.map(E => [E.id, E.name, E.charId]), pos });
   enterPlay(); computeFlow(); startWave();
 }
 $('playBtn').onclick = () => { leaveNet(); startGame(); };
@@ -1844,6 +2157,16 @@ function renderChars() {
     return b;
   }));
 }
+const MAP_SW = { pueblo: 'linear-gradient(160deg,#ffb36b,#d98b5f 55%,#4a4650)', sanatorio: 'linear-gradient(160deg,#3a4466,#07080d 55%,#5a0f12)' };
+function renderMaps() {
+  $('maps').replaceChildren(...Object.values(MAPS).map(M => {
+    const b = document.createElement('button'), sel = MAP === M;
+    b.className = 'char' + (sel ? ' sel' : '');
+    b.innerHTML = `<span class="mapsw" style="background:${MAP_SW[M.id]}"></span><span><b>${M.name}</b><small>${M.desc}</small>${sel ? '<em>Elegido</em>' : ''}</span>`;
+    b.onclick = () => { if (sel) return; save.map = M.id; persist(); setMap(M.id); showMenu(); };
+    return b;
+  }));
+}
 // menú: escenario con zombis de decoración alrededor de tu personaje
 function showMenu() {
   state = 'menu'; streamOn(null); setLoop('wind', 0);
@@ -1859,7 +2182,7 @@ function showMenu() {
   }
   $('dead').hidden = $('hud').hidden = $('prompt').hidden = $('lobby').hidden = $('downBox').hidden = true; $('menu').hidden = false; showSticks();
   if (best) $('bestTxt').textContent = `Tu récord: oleada ${best}`;
-  renderChars();
+  renderChars(); renderMaps();
 }
 
 // ---------- en línea: salas con código (PeerJS, WebRTC entre navegadores) ----------
@@ -1916,7 +2239,7 @@ function renderLobby(list) {
 const lobbyList = () => [...ents.values()].map(E => [E.name, E.charId]);
 function hostLobbyChanged() {
   const list = lobbyList(); renderLobby(list);
-  for (const c of NET.conns.values()) c.open && c.send({ t: 'lobby', list, code: NET.code });
+  for (const c of NET.conns.values()) c.open && c.send({ t: 'lobby', list, code: NET.code, map: MAP.id });
 }
 async function hostRoom() {
   if (!window.RTCPeerConnection) return netMsg(ERRORS['browser-incompatible'], true);
@@ -1926,13 +2249,14 @@ async function hostRoom() {
   const code = genCode(), peer = new window.Peer(peerId(code), { debug: 0 });
   NET = { host: true, peer, code, conns: new Map(), out: new Map(), bcast: [], nextId: 1, sendT: 0 };
   showLobby(true); lobbyStatus('Abriendo la sala…'); renderLobby(lobbyList());
-  peer.on('open', () => { $('codeTxt').textContent = code; lobbyStatus('Pasa el código a tus amigos (hasta 3). Empieza cuando estéis todos.'); });
+  peer.on('open', () => { $('codeTxt').textContent = code; lobbyStatus(`Mapa: ${MAP.name}. Pasa el código a tus amigos (hasta 3) y empieza cuando estéis todos.`); });
   peer.on('connection', conn => {
     conn.on('data', msg => onHostData(conn, msg));
     conn.on('close', () => dropClient(conn));
     conn.on('error', () => dropClient(conn));
   });
-  peer.on('error', e => { if (e.type === 'unavailable-id' && NET?.peer === peer) { leaveNet(); hostRoom(); } else if (NET?.peer === peer && !NET.conns.size) netFail(e); });
+  // errores leves (alguien que se va a mitad de conectar) no cierran la sala
+  peer.on('error', e => { if (NET?.peer !== peer) return; if (e.type === 'unavailable-id') { leaveNet(); hostRoom(); } else if (['network', 'server-error', 'socket-error', 'socket-closed', 'browser-incompatible', 'ssl-unavailable'].includes(e.type) && !NET.conns.size) netFail(e); });
   peer.on('disconnected', () => { try { peer.reconnect(); } catch {} });
 }
 function onHostData(conn, msg) {
@@ -1986,12 +2310,13 @@ async function joinRoom() {
 }
 function onClientData(msg) {
   if (!msg) return;
-  if (msg.t === 'lobby') renderLobby(msg.list);
+  if (msg.t === 'lobby') { renderLobby(msg.list); if (MAPS[msg.map]) lobbyStatus(`Dentro. Mapa: ${MAPS[msg.map].name}. Espera a que el anfitrión empiece.`); }
   else if (msg.t === 'full') netFail({ r: msg.r });
   else if (msg.t === 'start') clientStart(msg);
   else if (msg.t === 's' && (state === 'play' || state === 'over')) applySnap(msg);
 }
 function clientStart(m) {
+  setMap(m.map);
   for (const E of [...ents.values()]) if (E !== me) removeEnt(E);
   ents.clear();
   for (const [id, name, ch] of m.ents) {
@@ -2170,7 +2495,7 @@ const camT = new THREE.Vector3();
 let camFocus = null;
 function updateCamera(dt) {
   if (state === 'menu' || state === 'lobby') {
-    const a = T * .12; camera.position.set(Math.sin(a) * 12, 8, Math.cos(a) * 12); camera.lookAt(0, .8, 0); camFocus = me.pos; return;
+    const a = T * .12; camera.position.set(START[0] + Math.sin(a) * 12, 8, START[1] + Math.cos(a) * 12); camera.lookAt(START[0], .8, START[1]); camFocus = me.pos; return;
   }
   // si te han tumbado del todo, miras a un compañero
   camFocus = me.dead ? (alive()[0] ?? me).pos : me.pos;
@@ -2187,6 +2512,7 @@ function updateDoors(dt) {
   }
 }
 
+setMap(MAPS[save.map] ? save.map : 'pueblo');
 me = makeEnt(0, charOf(save.sel).name, save.sel);
 ents.set(0, me);
 showMenu();
@@ -2210,7 +2536,7 @@ function frame(now) {
   netTick(dt);
   flash.intensity = Math.max(0, flash.intensity - dt * 700);
   hurtT = Math.max(0, hurtT - dt * 1.5);
-  updateCamera(dt);
+  updateCamera(dt); updateEnv(dt);
   sun.position.set(camFocus.x - 18, 30, camFocus.z + 12); sun.target.position.set(camFocus.x, 0, camFocus.z);
   renderer.render(scene, camera);
 }
