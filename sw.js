@@ -1,6 +1,6 @@
 // Mini Zombis: deja la app jugable sin conexión (el online sí necesita red).
 // ponytail: red primero para que las actualizaciones lleguen solas; la caché solo se usa sin conexión
-const CACHE = 'minizombis-v6';
+const CACHE = 'minizombis-v7';
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png']))); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
