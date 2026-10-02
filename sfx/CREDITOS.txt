@@ -1,0 +1,3 @@
+zombies.wav: los 24 sonidos del "Zombies Sound Pack" de artisticdude (creados para Summoning Wars),
+licencia CC0 (dominio público). https://opengameart.org/content/zombies-sound-pack
+Convertidos a mono 22 kHz y unidos en un solo archivo.

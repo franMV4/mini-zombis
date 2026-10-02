@@ -1888,6 +1888,7 @@ function initAudio() {
     nbuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     loops.fire = makeLoop('lowpass', 900, .7); loops.ice = makeLoop('bandpass', 3200, 1.2); loops.wind = makeLoop('lowpass', 260, .5);
+    loadZombieVoices();
   } catch { ac = null; }
 }
 function makeLoop(type, f, q) {
@@ -1983,6 +1984,25 @@ const sfx = {
     voice({ f0: f, f1: f * (scream ? .55 : .7), dur: rand(.8, 1.5), vol: scream ? .09 : .08, form: scream ? [[1100, 3], [2400, 5]] : [[450, 4], [1000, 6]], vib: scream ? 9 : 6, vibAmt: .06, attack: .1, breath: .5, bf: scream ? 2600 : 1200, delay, lp: scream ? 1800 : 700 });
   },
 };
+// voces grabadas: "Zombies Sound Pack" de artisticdude (OpenGameArt, CC0). sfx/zombies.wav junta los 24 sonidos;
+// ZCLIP = [inicio, duración] en segundos. Si no carga (en el Artifact no hay archivos), se usa la voz sintetizada de abajo.
+const ZCLIP = { 1: [0, .746], 2: [.796, .668], 3: [1.513, .524], 4: [2.087, .708], 5: [2.845, .427], 6: [3.322, .451], 7: [3.823, .547], 8: [4.42, .778], 9: [5.248, .802], 10: [6.1, .617], 11: [6.768, .463], 12: [7.281, .746],
+  13: [8.077, .512], 14: [8.639, .611], 15: [9.3, .794], 16: [10.144, 1.381], 17: [11.575, 1.509], 18: [13.134, 1.042], 19: [14.226, .904], 20: [15.179, .879], 21: [16.108, 1.03], 22: [17.188, .594], 23: [17.832, .713], 24: [18.594, .274] };
+// clasificados por duración, tono y ataque: largos y graves = gruñido o muerte, cortos y secos = quejido, agudos = mordisco o chillido
+const ZKIND = { groan: [1, 9, 15, 18, 19, 20, 23], hurt: [3, 4, 5, 6, 11, 13, 24], attack: [2, 7, 10, 12, 14, 22], death: [16, 17, 18, 21], scream: [7, 8, 10, 12], roar: [16, 17, 21] };
+const ZVOL = { groan: .5, hurt: .45, attack: .6, death: .6, scream: .55, roar: .9 };
+let zbuf = null, zvoices = 0;
+function loadZombieVoices() {
+  fetch('sfx/zombies.wav').then(r => r.ok ? r.arrayBuffer() : Promise.reject()).then(b => ac.decodeAudioData(b)).then(b => { zbuf = b; }).catch(() => {});
+}
+// el mismo sonido sirve a todos: más agudo para corredores, más grave y lento para gordos y jefes; panorámica según el lado
+function zClip(kind, z, vol, lp) {
+  if (zvoices >= 8) return; // ponytail: tope de voces a la vez para no saturar con hordas grandes
+  const [t0, dur] = ZCLIP[pickOf(ZKIND[kind])], s = ac.createBufferSource(), g = ac.createGain(), pan = ac.createStereoPanner();
+  s.buffer = zbuf; s.playbackRate.value = Math.sqrt(ZT[z.type].pitch / 95) * z.voice * (kind === 'roar' ? .85 : kind === 'scream' ? 1.15 : 1);
+  g.gain.value = Math.min(1.2, vol); pan.pan.value = clamp((z.pos.x - me.pos.x) / 14, -.8, .8);
+  s.connect(g).connect(pan).connect(dest(lp)); s.start(0, t0, dur); zvoices++; s.onended = () => zvoices--;
+}
 // voces de zombi según tipo y distancia a TU jugador
 let groanBudget = 2;
 function zVoice(z, kind) {
@@ -1990,6 +2010,14 @@ function zVoice(z, kind) {
   const d = Math.hypot(z.pos.x - me.pos.x, z.pos.z - me.pos.z), a = clamp(1 - d / 34, 0, 1), t0 = ZT[z.type], p = t0.pitch * z.voice, L = a * t0.loud;
   if (a <= 0) return;
   const lp = d > 18 ? 1400 : undefined; // detrás de muros o lejos: más apagado
+  if (zbuf) {
+    const k = kind === 'spawn' ? 'groan' : kind;
+    if (kind === 'spawn') noise(.6, .2 * a, { f: 400, f1: 90, attack: .05 }); // tierra removida
+    zClip(k, z, ZVOL[k] * L, lp);
+    if (kind === 'roar') tone(45, 30, 1.6, .35 * L, 'sine', 0, .1);
+    if (kind === 'attack') { noise(.08, .3 * a, { f: 600, f1: 150, delay: .12 }); noise(.03, .2 * a, { type: 'highpass', f: 3000, delay: .12 }); } // mordisco
+    return;
+  }
   switch (kind) {
     case 'spawn': noise(.6, .2 * a, { f: 400, f1: 90, attack: .05 }); // tierra removida, y luego gime
     case 'groan': voice({ f0: p, f1: p * .72, dur: rand(.7, 1.3), vol: .17 * L, form: [[rand(380, 540), 4], [rand(900, 1300), 6]], vib: rand(5, 9), vibAmt: .07, attack: .18, breath: .45, lp }); break;
