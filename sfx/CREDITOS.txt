@@ -1,7 +1,7 @@
-zombies.wav: los 24 sonidos del "Zombies Sound Pack" de artisticdude (creados para Summoning Wars),
-licencia CC0 (dominio público). https://opengameart.org/content/zombies-sound-pack
-Convertidos a mono 22 kHz y unidos en un solo archivo.
+Los sonidos van dentro de index.html (mu-law 8 bits, 22 kHz, en base64) para que funcionen también abriendo el archivo con doble clic.
 
-jugador.wav: quejidos y gritos de "Male Grunt/Yelling sounds" de HaelDB, licencia CC0 (dominio público).
+Zombis: los 24 sonidos del "Zombies Sound Pack" de artisticdude (creados para Summoning Wars), licencia CC0.
+https://opengameart.org/content/zombies-sound-pack
+
+Jugador: quejidos y gritos de "Male Grunt/Yelling sounds" de HaelDB, licencia CC0.
 https://opengameart.org/content/male-gruntyelling-sounds
-4 voces (una por grupo de personajes), convertidas a mono 22 kHz y unidas en un solo archivo.
