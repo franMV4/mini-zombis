@@ -1784,22 +1784,24 @@ const bullets = [], fxs = [];
 const bulletGeo = new THREE.BoxGeometry(.09, .09, .6), bulletMat = bmat(0xfff0a8), papBulletMat = bmat(0xd08bff);
 const streamGeo = new THREE.SphereGeometry(.28, 8, 6), orbGeo = new THREE.SphereGeometry(.17, 10, 8), fxGeo = new THREE.SphereGeometry(1, 16, 10);
 // owner = entidad que hace daño (anfitrión); null = bala solo visual (clientes)
-function spawnBullet(x, z, a, w, owner) {
+// skip: metros que recorre invisible antes de verse (sale del cuerpo pero se ve salir del cañón)
+function spawnBullet(x, z, a, w, owner, skip = 0) {
   const dx = Math.sin(a), dz = Math.cos(a);
   let mesh;
   if (w.stream) mesh = new THREE.Mesh(streamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false }));
   else if (w.boom) mesh = new THREE.Mesh(orbGeo, bmat(w.pcol));
   else { mesh = new THREE.Mesh(bulletGeo, w.pap ? papBulletMat : bulletMat); mesh.rotation.y = a; if (w.long) mesh.scale.z = 2; }
-  mesh.position.set(x, .82, z); scene.add(mesh);
-  bullets.push({ mesh, w, vx: dx * w.speed, vz: dz * w.speed, life: w.life, pierce: w.pierce ?? 0, hit: new Set(), owner });
+  mesh.position.set(x, .82, z); mesh.visible = !skip; scene.add(mesh);
+  bullets.push({ mesh, w, vx: dx * w.speed, vz: dz * w.speed, life: w.life + skip / w.speed, pierce: w.pierce ?? 0, hit: new Set(), owner, skip });
 }
 function removeBullet(i) { const b = bullets[i]; scene.remove(b.mesh); if (b.w.stream) b.mesh.material.dispose(); bullets.splice(i, 1); }
 function updateBullets(dt) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i], w = b.w, p = b.mesh.position;
     p.x += b.vx * dt; p.z += b.vz * dt; b.life -= dt;
+    if (b.skip > 0 && (b.skip -= w.speed * dt) <= 0) b.mesh.visible = true;
     if (w.stream) {
-      const k = 1 - b.life / w.life;
+      const k = Math.max(0, 1 - b.life / w.life);
       b.mesh.scale.setScalar(1 + k * 2.2); b.mesh.material.opacity = .9 * (1 - k); p.y += dt * 1.2;
       if (w.stream === 'ice') b.mesh.material.color.setHSL(.55, .8, .75 - k * .3);
       else b.mesh.material.color.setHSL(.09 - k * .08, 1, .6 - k * .25);
@@ -1965,7 +1967,7 @@ const sfx = {
   laugh: () => { for (let i = 0; i < 5; i++) voice({ f0: 170 - i * 8, f1: 140 - i * 8, dur: .14, vol: .22, form: [[600, 4], [1000, 5]], delay: i * .16, attack: .01 }); },
   wave: () => { tone(82, 41, 1.6, .35, 'sawtooth', 0, .05); tone(55, 40, 1.8, .3, 'sine'); noise(1.4, .18, { f: 300, f1: 60, attack: .2 }); sfx.distant(.3); sfx.distant(.9); },
   clear: () => { [523, 659, 784, 1046].forEach((n, i) => tone(n, n, .25, .08, 'triangle', i * .12)); },
-  flesh: () => { noise(.08, .2, { f: 900, f1: 200 }); noise(.05, .1, { type: 'bandpass', f: 2200, q: 2, delay: .02 }); },
+  flesh: () => noise(.09, .22, { f: 520, f1: 110 }),
   // tú: quejido de dolor al recibir un golpe, grito al caer, latido con poca vida
   ouch: () => { if (pClip('ouch', .7)) return; const f = rand(185, 240); voice({ f0: f, f1: f * .7, dur: rand(.16, .26), vol: .38, form: AH, vib: 5, vibAmt: .02, attack: .008, breath: .4, bf: 1800 }); noise(.07, .18, { f: 600, f1: 150 }); },
   deathScream: () => { if (pClip('death', .85)) return; voice({ f0: 290, f1: 110, dur: 1.5, vol: .42, form: AH, vib: 6, vibAmt: .05, attack: .02, breath: .45, bf: 2000 }); },
@@ -2023,7 +2025,8 @@ function pClip(kind, vol) {
 }
 // el mismo sonido sirve a todos: más agudo para corredores, más grave y lento para gordos y jefes; panorámica según el lado
 function zClip(kind, z, vol, lp) {
-  if (zvoices >= 8) return; // ponytail: tope de voces a la vez para no saturar con hordas grandes
+  // ponytail: tope de voces a la vez; los gemidos de fondo solo usan 4 huecos para que siempre quede sitio para quejidos, mordiscos y muertes
+  if (zvoices >= (kind === 'groan' ? 4 : 12)) return;
   const [t0, dur] = ZCLIP[pickOf(ZKIND[kind])], s = ac.createBufferSource(), g = ac.createGain(), pan = ac.createStereoPanner();
   s.buffer = zbuf; s.playbackRate.value = Math.sqrt(ZT[z.type].pitch / 95) * z.voice * (kind === 'roar' ? .85 : kind === 'scream' ? 1.15 : 1);
   g.gain.value = Math.min(1.2, vol); pan.pan.value = clamp((z.pos.x - me.pos.x) / 14, -.8, .8);
@@ -2041,7 +2044,7 @@ function zVoice(z, kind) {
     if (kind === 'spawn') noise(.6, .2 * a, { f: 400, f1: 90, attack: .05 }); // tierra removida
     zClip(k, z, ZVOL[k] * L, lp);
     if (kind === 'roar') tone(45, 30, 1.6, .35 * L, 'sine', 0, .1);
-    if (kind === 'attack') { noise(.08, .3 * a, { f: 600, f1: 150, delay: .12 }); noise(.03, .2 * a, { type: 'highpass', f: 3000, delay: .12 }); } // mordisco
+    if (kind === 'attack') noise(.1, .25 * a, { f: 500, f1: 110, delay: .12 }); // mordisco: solo el golpe sordo
     return;
   }
   switch (kind) {
@@ -2185,8 +2188,8 @@ function shotFx(x, z, w, local) {
 }
 // anfitrión: disparo con daño de cualquier jugador
 function fire(E, w) {
-  const [x, z] = muzzle(E, w), angs = shotAngles(w, E.aim, E);
-  for (const a of angs) spawnBullet(x, z, a, w, E);
+  const [x, z] = muzzle(E, w), angs = shotAngles(w, E.aim, E), reach = Math.hypot(x - E.pos.x, z - E.pos.z);
+  for (const a of angs) spawnBullet(E.pos.x, E.pos.z, a, w, E, reach);
   useAmmo(E);
   shotFx(x, z, w, E === me);
   broadcast({ t: 'shot', o: E.id, w: heldIdOf(E), x: +x.toFixed(2), z: +z.toFixed(2), a: angs });
